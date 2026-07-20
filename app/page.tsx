@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { kv } from "@vercel/kv";
 import { verifySession } from "@/lib/dal";
 import { entryKey } from "@/lib/kv-keys";
@@ -25,6 +26,12 @@ export default async function Home() {
           </form>
         </div>
         <EodForm initialContent={entry?.content ?? ""} />
+        <Link
+          href="/entries"
+          className="text-base font-medium text-black dark:text-zinc-50 hover:underline"
+        >
+          Show all EOD&apos;s
+        </Link>
       </main>
     </div>
   );
