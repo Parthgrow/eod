@@ -2,14 +2,19 @@ import Link from "next/link";
 import { kv } from "@vercel/kv";
 import { verifySession } from "@/lib/dal";
 import { entryKey } from "@/lib/kv-keys";
-import { todayDateKey, type EodEntry } from "@/lib/eod";
+import { todayDateKey, yesterdayDateKey, type EodEntry } from "@/lib/eod";
 import { logout } from "@/app/actions/auth";
 import EodForm from "@/app/EodForm";
 
 export default async function Home() {
   const session = await verifySession();
   const date = todayDateKey();
-  const entry = await kv.get<EodEntry>(entryKey(session.userId, date));
+  const yesterday = yesterdayDateKey();
+
+  const [entry, yesterdayEntry] = await Promise.all([
+    kv.get<EodEntry>(entryKey(session.userId, date)),
+    kv.get<EodEntry>(entryKey(session.userId, yesterday)),
+  ]);
 
   return (
     <div className="flex flex-col flex-1 items-center bg-zinc-50 font-sans dark:bg-black min-h-screen">
@@ -25,7 +30,13 @@ export default async function Home() {
             </button>
           </form>
         </div>
-        <EodForm initialContent={entry?.content ?? ""} />
+        <EodForm
+          today={date}
+          initialContent={entry?.content ?? ""}
+          yesterday={yesterday}
+          initialYesterdayContent={yesterdayEntry?.content ?? ""}
+          yesterdayAlreadyFilled={yesterdayEntry !== null}
+        />
         <Link
           href="/entries"
           className="text-base font-medium text-black dark:text-zinc-50 hover:underline"
