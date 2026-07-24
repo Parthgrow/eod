@@ -17,3 +17,13 @@ export function entryKey(userId: string, date: string): string {
 export function entryIndexKey(userId: string): string {
   return `eod:user:${userId}:entry_dates`;
 }
+
+// API integrations board — a shared team artifact, so these keys are global
+// (not scoped by user).
+export function integrationKey(id: string): string {
+  return `integration:${id}`;
+}
+
+export function integrationsIndexKey(): string {
+  return "integrations";
+}
