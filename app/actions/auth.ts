@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { signIn } from "@/lib/auth";
 import { register, AccountExistsError } from "@/lib/auth/credentials-provider";
 import { createSession, deleteSession } from "@/lib/session";
+import { resolveOrgForUser } from "@/lib/org-store";
 
 export type LoginState = { error?: string } | undefined;
 
@@ -20,7 +21,8 @@ export async function login(_prevState: LoginState, formData: FormData): Promise
     return { error: "Invalid email or password." };
   }
 
-  await createSession(user);
+  const orgId = await resolveOrgForUser(user);
+  await createSession(user, orgId);
   redirect("/");
 }
 
@@ -47,7 +49,8 @@ export async function signup(_prevState: SignupState, formData: FormData): Promi
     throw err;
   }
 
-  await createSession(user);
+  const orgId = await resolveOrgForUser(user);
+  await createSession(user, orgId);
   redirect("/");
 }
 

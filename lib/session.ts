@@ -15,6 +15,7 @@ const encodedKey = new TextEncoder().encode(secretKey);
 export type SessionPayload = JWTPayload & {
   userId: string;
   email: string;
+  orgId: string;
 };
 
 async function encrypt(payload: SessionPayload): Promise<string> {
@@ -37,8 +38,8 @@ export async function decrypt(session: string | undefined): Promise<SessionPaylo
   }
 }
 
-export async function createSession(user: AuthUser): Promise<void> {
-  const session = await encrypt({ userId: user.id, email: user.email });
+export async function createSession(user: AuthUser, orgId: string): Promise<void> {
+  const session = await encrypt({ userId: user.id, email: user.email, orgId });
   const cookieStore = await cookies();
 
   cookieStore.set(SESSION_COOKIE, session, {
