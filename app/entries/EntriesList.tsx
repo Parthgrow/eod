@@ -25,10 +25,13 @@ export default function EntriesList({ initialPage }: { initialPage: EntriesPage 
         <ul className="flex flex-col gap-3">
           {data.entries.map((entry) => (
             <li
-              key={entry.date}
+              key={`${entry.userId}#${entry.date}`}
               className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4"
             >
-              <p className="text-xs text-zinc-500 mb-1">{entry.date}</p>
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <p className="text-xs text-zinc-500">{entry.date}</p>
+                <p className="text-xs text-zinc-400 truncate">{entry.authorEmail}</p>
+              </div>
               <p className="text-sm text-black dark:text-zinc-50 whitespace-pre-wrap">{entry.content}</p>
             </li>
           ))}

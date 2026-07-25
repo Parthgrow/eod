@@ -3,14 +3,15 @@ import { kv } from "@vercel/kv";
 import { integrationKey, integrationsIndexKey } from "@/lib/kv-keys";
 import type { ApiIntegration, IntegrationStatus } from "@/lib/integrations";
 
-// The board is a shared team artifact, so keys are not scoped by user.
+// Scoped to an organization: every function takes the caller's orgId (which only
+// ever comes from their session), so a user can't reach another org's board.
 
-export async function listIntegrations(): Promise<ApiIntegration[]> {
-  const ids = await kv.smembers<string[]>(integrationsIndexKey());
+export async function listIntegrations(orgId: string): Promise<ApiIntegration[]> {
+  const ids = await kv.smembers<string[]>(integrationsIndexKey(orgId));
   if (!ids.length) return [];
 
   const items = await Promise.all(
-    ids.map((id) => kv.get<ApiIntegration>(integrationKey(id)))
+    ids.map((id) => kv.get<ApiIntegration>(integrationKey(orgId, id)))
   );
 
   return items
@@ -18,10 +19,10 @@ export async function listIntegrations(): Promise<ApiIntegration[]> {
     .sort((a, b) => a.createdAt - b.createdAt);
 }
 
-export async function createIntegration(input: {
-  provider: string;
-  name: string;
-}): Promise<ApiIntegration> {
+export async function createIntegration(
+  orgId: string,
+  input: { provider: string; name: string }
+): Promise<ApiIntegration> {
   const now = Date.now();
   const integration: ApiIntegration = {
     id: crypto.randomUUID(),
@@ -33,32 +34,33 @@ export async function createIntegration(input: {
   };
 
   await Promise.all([
-    kv.set(integrationKey(integration.id), integration),
-    kv.sadd(integrationsIndexKey(), integration.id),
+    kv.set(integrationKey(orgId, integration.id), integration),
+    kv.sadd(integrationsIndexKey(orgId), integration.id),
   ]);
 
   return integration;
 }
 
 export async function setIntegrationStatus(
+  orgId: string,
   id: string,
   status: IntegrationStatus
 ): Promise<ApiIntegration | null> {
-  const existing = await kv.get<ApiIntegration>(integrationKey(id));
+  const existing = await kv.get<ApiIntegration>(integrationKey(orgId, id));
   if (!existing) return null;
 
   const updated: ApiIntegration = { ...existing, status, updatedAt: Date.now() };
-  await kv.set(integrationKey(id), updated);
+  await kv.set(integrationKey(orgId, id), updated);
   return updated;
 }
 
-export async function removeIntegration(id: string): Promise<boolean> {
-  const existing = await kv.get<ApiIntegration>(integrationKey(id));
+export async function removeIntegration(orgId: string, id: string): Promise<boolean> {
+  const existing = await kv.get<ApiIntegration>(integrationKey(orgId, id));
   if (!existing) return false;
 
   await Promise.all([
-    kv.del(integrationKey(id)),
-    kv.srem(integrationsIndexKey(), id),
+    kv.del(integrationKey(orgId, id)),
+    kv.srem(integrationsIndexKey(orgId), id),
   ]);
   return true;
 }

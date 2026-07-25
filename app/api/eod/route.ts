@@ -1,11 +1,11 @@
 import { kv } from "@vercel/kv";
-import { requireUserId } from "@/lib/dal";
-import { entryKey, entryIndexKey } from "@/lib/kv-keys";
+import { requireSession } from "@/lib/dal";
+import { entryKey, entryIndexKey, orgEntryIndexKey } from "@/lib/kv-keys";
 import { todayDateKey, isValidDateKey, type EodEntry } from "@/lib/eod";
 
 export async function GET(request: Request) {
-  const userId = await requireUserId();
-  if (userId instanceof Response) return userId;
+  const session = await requireSession();
+  if (session instanceof Response) return session;
 
   const dateParam = new URL(request.url).searchParams.get("date");
   if (dateParam && !isValidDateKey(dateParam)) {
@@ -13,14 +13,14 @@ export async function GET(request: Request) {
   }
 
   const date = dateParam ?? todayDateKey();
-  const entry = await kv.get<EodEntry>(entryKey(userId, date));
+  const entry = await kv.get<EodEntry>(entryKey(session.userId, date));
 
   return Response.json({ entry });
 }
 
 export async function POST(request: Request) {
-  const userId = await requireUserId();
-  if (userId instanceof Response) return userId;
+  const session = await requireSession();
+  if (session instanceof Response) return session;
 
   const { content, date: dateInput } = (await request.json()) as {
     content?: string;
@@ -34,8 +34,7 @@ export async function POST(request: Request) {
 
   const today = todayDateKey();
 
-  // The date is optional and defaults to today. When provided it may be any
-  // past day (or today), but never a future one or a malformed value.
+  // Optional date; defaults to today. Any past day is allowed, never a future one.
   if (dateInput !== undefined) {
     if (!isValidDateKey(dateInput)) {
       return Response.json({ error: "Invalid date." }, { status: 400 });
@@ -49,10 +48,9 @@ export async function POST(request: Request) {
   }
 
   const date = dateInput ?? today;
-  const existing = await kv.get<EodEntry>(entryKey(userId, date));
+  const existing = await kv.get<EodEntry>(entryKey(session.userId, date));
 
-  // Today's entry stays editable (upsert). Past days are write-once: once an
-  // EOD exists for a past date it cannot be overwritten.
+  // Today's entry stays editable (upsert). Past days are write-once.
   if (date !== today && existing) {
     return Response.json(
       { error: "An EOD already exists for that day." },
@@ -62,16 +60,21 @@ export async function POST(request: Request) {
 
   const now = Date.now();
   const entry: EodEntry = {
-    userId,
+    userId: session.userId,
+    authorEmail: session.email,
+    orgId: session.orgId,
     date,
     content: trimmed,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
 
+  const score = Number(date.replaceAll("-", ""));
   await Promise.all([
-    kv.set(entryKey(userId, date), entry),
-    kv.zadd(entryIndexKey(userId), { score: Number(date.replaceAll("-", "")), member: date }),
+    kv.set(entryKey(session.userId, date), entry),
+    kv.zadd(entryIndexKey(session.userId), { score, member: date }),
+    // Add to the org-wide feed so the whole team sees it.
+    kv.zadd(orgEntryIndexKey(session.orgId), { score, member: `${date}#${session.userId}` }),
   ]);
 
   return Response.json({ entry });

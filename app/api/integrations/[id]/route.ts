@@ -1,4 +1,4 @@
-import { requireUserId } from "@/lib/dal";
+import { requireSession } from "@/lib/dal";
 import { isIntegrationStatus } from "@/lib/integrations";
 import { setIntegrationStatus, removeIntegration } from "@/lib/integrations-store";
 
@@ -6,8 +6,8 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userId = await requireUserId();
-  if (userId instanceof Response) return userId;
+  const session = await requireSession();
+  if (session instanceof Response) return session;
 
   const { id } = await params;
   const { status } = (await request.json()) as { status?: string };
@@ -15,7 +15,7 @@ export async function PATCH(
     return Response.json({ error: "Invalid status." }, { status: 400 });
   }
 
-  const updated = await setIntegrationStatus(id, status);
+  const updated = await setIntegrationStatus(session.orgId, id, status);
   if (!updated) {
     return Response.json({ error: "Integration not found." }, { status: 404 });
   }
@@ -26,11 +26,11 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const userId = await requireUserId();
-  if (userId instanceof Response) return userId;
+  const session = await requireSession();
+  if (session instanceof Response) return session;
 
   const { id } = await params;
-  const removed = await removeIntegration(id);
+  const removed = await removeIntegration(session.orgId, id);
   if (!removed) {
     return Response.json({ error: "Integration not found." }, { status: 404 });
   }

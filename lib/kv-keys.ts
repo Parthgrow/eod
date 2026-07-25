@@ -18,12 +18,33 @@ export function entryIndexKey(userId: string): string {
   return `eod:user:${userId}:entry_dates`;
 }
 
-// API integrations board — a shared team artifact, so these keys are global
-// (not scoped by user).
-export function integrationKey(id: string): string {
-  return `integration:${id}`;
+// Organizations & membership (workspaces).
+export function orgKey(orgId: string): string {
+  return `org:${orgId}`;
 }
 
-export function integrationsIndexKey(): string {
-  return "integrations";
+export function orgMembersKey(orgId: string): string {
+  return `org:${orgId}:members`; // Set<userId> — org → users index
+}
+
+export function orgMemberKey(orgId: string, userId: string): string {
+  return `org:${orgId}:member:${userId}`; // Hash — the membership "row"
+}
+
+export function userOrgsKey(userId: string): string {
+  return `eod:user:${userId}:orgs`; // Set<orgId> — user → orgs index (many-to-many seam)
+}
+
+// API integrations board — scoped to an organization.
+export function integrationKey(orgId: string, id: string): string {
+  return `org:${orgId}:integration:${id}`;
+}
+
+export function integrationsIndexKey(orgId: string): string {
+  return `org:${orgId}:integrations`;
+}
+
+// Org-wide EOD feed — sorted set of `${date}#${userId}` refs, scored by date.
+export function orgEntryIndexKey(orgId: string): string {
+  return `org:${orgId}:eod_index`;
 }

@@ -1,9 +1,11 @@
 import "server-only";
 import { kv } from "@vercel/kv";
-import { entryKey, entryIndexKey } from "@/lib/kv-keys";
+import { entryKey, entryIndexKey, orgEntryIndexKey } from "@/lib/kv-keys";
 
 export type EodEntry = {
   userId: string;
+  authorEmail: string; // denormalized so the org feed can show the author
+  orgId: string;
   date: string; // YYYY-MM-DD, UTC calendar day
   content: string;
   createdAt: number;
@@ -53,6 +55,39 @@ export async function getEntriesPage(
 
   const entries = dates.length
     ? await Promise.all(dates.map((date) => kv.get<EodEntry>(entryKey(userId, date))))
+    : [];
+
+  return {
+    entries: entries.filter((e): e is EodEntry => e !== null),
+    page,
+    pageSize,
+    total,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  };
+}
+
+// Org-wide feed: every member's entries, newest first. Reads the org index of
+// `${date}#${userId}` refs and resolves each back to the authored entry.
+export async function getOrgEntriesPage(
+  orgId: string,
+  page: number,
+  pageSize: number = ENTRIES_PAGE_SIZE
+): Promise<EntriesPage> {
+  const start = page * pageSize;
+  const stop = start + pageSize - 1;
+
+  const [refs, total] = await Promise.all([
+    kv.zrange<string[]>(orgEntryIndexKey(orgId), start, stop, { rev: true }),
+    kv.zcard(orgEntryIndexKey(orgId)),
+  ]);
+
+  const entries = refs.length
+    ? await Promise.all(
+        refs.map((ref) => {
+          const sep = ref.indexOf("#");
+          return kv.get<EodEntry>(entryKey(ref.slice(sep + 1), ref.slice(0, sep)));
+        })
+      )
     : [];
 
   return {

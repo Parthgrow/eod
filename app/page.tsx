@@ -4,6 +4,7 @@ import { verifySession } from "@/lib/dal";
 import { entryKey } from "@/lib/kv-keys";
 import { todayDateKey, yesterdayDateKey, type EodEntry } from "@/lib/eod";
 import { logout } from "@/app/actions/auth";
+import { getOrg } from "@/lib/org-store";
 import EodForm from "@/app/EodForm";
 
 export default async function Home() {
@@ -11,7 +12,8 @@ export default async function Home() {
   const date = todayDateKey();
   const yesterday = yesterdayDateKey();
 
-  const [entry, yesterdayEntry] = await Promise.all([
+  const [org, entry, yesterdayEntry] = await Promise.all([
+    getOrg(session.orgId),
     kv.get<EodEntry>(entryKey(session.userId, date)),
     kv.get<EodEntry>(entryKey(session.userId, yesterday)),
   ]);
@@ -21,14 +23,19 @@ export default async function Home() {
       <main className="flex flex-1 w-full max-w-xl flex-col items-center justify-center gap-8 py-12 px-6">
         <div className="w-full flex items-center justify-between">
           <h1 className="text-lg font-medium text-zinc-500 dark:text-zinc-400">{date}</h1>
-          <form action={logout}>
-            <button
-              type="submit"
-              className="text-sm text-zinc-500 hover:text-black dark:hover:text-white"
-            >
-              Sign out
-            </button>
-          </form>
+          <div className="flex flex-col items-end gap-0.5">
+            {org && (
+              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{org.name}</span>
+            )}
+            <form action={logout}>
+              <button
+                type="submit"
+                className="text-sm text-zinc-500 hover:text-black dark:hover:text-white"
+              >
+                Sign out
+              </button>
+            </form>
+          </div>
         </div>
         <EodForm
           today={date}

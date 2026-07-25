@@ -1,17 +1,17 @@
-import { requireUserId } from "@/lib/dal";
+import { requireSession } from "@/lib/dal";
 import { listIntegrations, createIntegration } from "@/lib/integrations-store";
 
 export async function GET() {
-  const userId = await requireUserId();
-  if (userId instanceof Response) return userId;
+  const session = await requireSession();
+  if (session instanceof Response) return session;
 
-  const integrations = await listIntegrations();
+  const integrations = await listIntegrations(session.orgId);
   return Response.json({ integrations });
 }
 
 export async function POST(request: Request) {
-  const userId = await requireUserId();
-  if (userId instanceof Response) return userId;
+  const session = await requireSession();
+  if (session instanceof Response) return session;
 
   const { provider, name } = (await request.json()) as {
     provider?: string;
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Provider and name are required." }, { status: 400 });
   }
 
-  const integration = await createIntegration({
+  const integration = await createIntegration(session.orgId, {
     provider: trimmedProvider,
     name: trimmedName,
   });
