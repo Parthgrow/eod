@@ -25,5 +25,7 @@ export default async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|.*\\.png$|.*\\.ico$).*)"],
+  // `database-schema` is excluded so the local-only dev page isn't caught by the
+  // auth redirects (no login required, and logged-in users aren't bounced off it).
+  matcher: ["/((?!api|database-schema|_next/static|_next/image|.*\\.png$|.*\\.ico$).*)"],
 };
