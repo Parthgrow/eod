@@ -1,7 +1,8 @@
 import "server-only";
 import { kv } from "@vercel/kv";
-import { boardTicketKey, boardTicketsIndexKey } from "@/lib/kv-keys";
-import { isColumn, type Board } from "@/lib/boards";
+import { boardTicketKey, boardTicketsIndexKey, orgMembersKey } from "@/lib/kv-keys";
+import { effectiveFields, isColumn, type Board } from "@/lib/boards";
+import { findOrCreateProjectByName } from "@/lib/projects-store";
 import type { Ticket } from "@/lib/tickets";
 
 // Scoped to an organization AND a board: every function takes the caller's orgId
@@ -23,24 +24,35 @@ export async function listTickets(orgId: string, boardId: string): Promise<Ticke
 export async function createTicket(
   orgId: string,
   board: Board,
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
+  createdBy: string
 ): Promise<Ticket | { error: string }> {
   const title = typeof input.title === "string" ? input.title.trim() : "";
   if (!title) return { error: "Title is required." };
 
-  // Collect + validate only the fields this board declares.
+  // Collect + validate the board's fields plus the universal ones (e.g. assignee).
   const extra: Partial<Ticket> = {};
-  for (const spec of board.fields) {
+  for (const spec of effectiveFields(board)) {
     const raw = input[spec.key];
     const value = typeof raw === "string" ? raw.trim() : "";
     if (!value) {
       if (spec.required) return { error: `${spec.label} is required.` };
       continue;
     }
+
     if (spec.type === "select" && spec.options && !spec.options.includes(value)) {
       return { error: `${spec.label} is invalid.` };
+    } else if (spec.type === "member") {
+      const ok = await kv.sismember(orgMembersKey(orgId), value);
+      if (!ok) return { error: `${spec.label} is not a valid member.` };
+      extra[spec.key] = value; // assigneeId = userId
+    } else if (spec.type === "project") {
+      // The input holds a project *name*; reuse or create the project, store its id.
+      const project = await findOrCreateProjectByName(orgId, value, createdBy);
+      extra[spec.key] = project.id; // projectId
+    } else {
+      extra[spec.key] = value; // text / select
     }
-    extra[spec.key] = value;
   }
 
   const now = Date.now();
@@ -52,6 +64,7 @@ export async function createTicket(
     status: board.initialStatus,
     createdAt: now,
     updatedAt: now,
+    createdBy,
   };
 
   await Promise.all([

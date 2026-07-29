@@ -44,6 +44,15 @@ export function boardTicketKey(orgId: string, boardId: string, ticketId: string)
   return `org:${orgId}:board:${boardId}:ticket:${ticketId}`;
 }
 
+// Projects — a normalized entity referenced by tickets, scoped to an organization.
+export function projectsIndexKey(orgId: string): string {
+  return `org:${orgId}:projects`;
+}
+
+export function projectKey(orgId: string, projectId: string): string {
+  return `org:${orgId}:project:${projectId}`;
+}
+
 // Org-wide EOD feed — sorted set of `${date}#${userId}` refs, scored by date.
 export function orgEntryIndexKey(orgId: string): string {
   return `org:${orgId}:eod_index`;

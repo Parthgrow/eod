@@ -64,3 +64,18 @@ export async function resolveOrgForUser(user: {
 
   return orgId;
 }
+
+export type OrgMember = { userId: string; email: string };
+
+export async function listMembers(orgId: string): Promise<OrgMember[]> {
+  const ids = await kv.smembers<string[]>(orgMembersKey(orgId));
+  if (!ids.length) return [];
+
+  const members = await Promise.all(
+    ids.map(async (userId) => {
+      const user = await kv.hgetall<{ email?: string }>(userKey(userId));
+      return { userId, email: user?.email ?? "" };
+    })
+  );
+  return members.filter((m) => m.email).sort((a, b) => a.email.localeCompare(b.email));
+}

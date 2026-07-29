@@ -1,15 +1,30 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { Board as BoardDef } from "@/lib/boards";
+import { effectiveFields, type Board as BoardDef } from "@/lib/boards";
 import type { Ticket, TicketFieldKey } from "@/lib/tickets";
+
+type Member = { userId: string; email: string };
+type ProjectOption = { id: string; name: string };
 
 const inputCls =
   "rounded-full border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-2 text-sm outline-none focus:border-black dark:focus:border-white";
 const btnCls =
   "rounded-full bg-black dark:bg-white text-white dark:text-black px-4 py-2 text-sm font-medium disabled:opacity-50";
 
-export default function Board({ board, initial }: { board: BoardDef; initial: Ticket[] }) {
+const localPart = (email: string) => email.split("@")[0];
+
+export default function Board({
+  board,
+  initial,
+  members,
+  projects,
+}: {
+  board: BoardDef;
+  initial: Ticket[];
+  members: Member[];
+  projects: ProjectOption[];
+}) {
   const [items, setItems] = useState(initial);
   const [busy, setBusy] = useState<Set<string>>(new Set());
 
@@ -18,8 +33,12 @@ export default function Board({ board, initial }: { board: BoardDef; initial: Ti
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
-  // Filter on the board's first field, if it has one (e.g. provider / priority).
-  const filterField = board.fields[0];
+  const projectsMap = useMemo(() => new Map(projects.map((p) => [p.id, p.name])), [projects]);
+  const membersMap = useMemo(() => new Map(members.map((m) => [m.userId, m.email])), [members]);
+
+  // Filter on the board's first plain (text/select) field, if any — reference
+  // fields (member/project) aren't filterable here.
+  const filterField = board.fields.find((f) => f.type === "text" || f.type === "select");
   const [filterValue, setFilterValue] = useState<string | null>(null);
 
   const valuesOf = useMemo(() => {
@@ -43,10 +62,14 @@ export default function Board({ board, initial }: { board: BoardDef; initial: Ti
     });
   }
 
+  function setField(key: string, value: string) {
+    setFieldValues((v) => ({ ...v, [key]: value }));
+  }
+
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
-    for (const f of board.fields) {
+    for (const f of effectiveFields(board)) {
       if (f.required && !(fieldValues[f.key] ?? "").trim()) {
         setAddError(`${f.label} is required.`);
         return;
@@ -106,27 +129,56 @@ export default function Board({ board, initial }: { board: BoardDef; initial: Ti
           placeholder="Title"
           className={inputCls}
         />
-        {board.fields.map((f) =>
-          f.type === "select" ? (
-            <select
-              key={f.key}
-              value={fieldValues[f.key] ?? ""}
-              onChange={(e) => setFieldValues((v) => ({ ...v, [f.key]: e.target.value }))}
-              className={inputCls}
-            >
-              <option value="">{f.label}</option>
-              {f.options?.map((o) => (
-                <option key={o} value={o}>
-                  {o}
-                </option>
-              ))}
-            </select>
-          ) : (
+        {effectiveFields(board).map((f) => {
+          const value = fieldValues[f.key] ?? "";
+          if (f.type === "member") {
+            return (
+              <select key={f.key} value={value} onChange={(e) => setField(f.key, e.target.value)} className={inputCls}>
+                <option value="">{f.label}</option>
+                {members.map((m) => (
+                  <option key={m.userId} value={m.userId}>
+                    {m.email}
+                  </option>
+                ))}
+              </select>
+            );
+          }
+          if (f.type === "select") {
+            return (
+              <select key={f.key} value={value} onChange={(e) => setField(f.key, e.target.value)} className={inputCls}>
+                <option value="">{f.label}</option>
+                {f.options?.map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
+              </select>
+            );
+          }
+          if (f.type === "project") {
+            return (
+              <span key={f.key}>
+                <input
+                  list="dl-projects"
+                  value={value}
+                  onChange={(e) => setField(f.key, e.target.value)}
+                  placeholder={f.label}
+                  className={inputCls}
+                />
+                <datalist id="dl-projects">
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.name} />
+                  ))}
+                </datalist>
+              </span>
+            );
+          }
+          return (
             <span key={f.key}>
               <input
                 list={`dl-${f.key}`}
-                value={fieldValues[f.key] ?? ""}
-                onChange={(e) => setFieldValues((v) => ({ ...v, [f.key]: e.target.value }))}
+                value={value}
+                onChange={(e) => setField(f.key, e.target.value)}
                 placeholder={f.label}
                 className={inputCls}
               />
@@ -136,8 +188,8 @@ export default function Board({ board, initial }: { board: BoardDef; initial: Ti
                 ))}
               </datalist>
             </span>
-          )
-        )}
+          );
+        })}
         <button type="submit" disabled={adding || !title.trim()} className={btnCls}>
           {adding ? "Adding..." : "+ Add ticket"}
         </button>
@@ -172,6 +224,8 @@ export default function Board({ board, initial }: { board: BoardDef; initial: Ti
                     key={ticket.id}
                     ticket={ticket}
                     board={board}
+                    projectsMap={projectsMap}
+                    membersMap={membersMap}
                     busy={busy.has(ticket.id)}
                     canLeft={colIdx > 0}
                     canRight={colIdx < board.columns.length - 1}
@@ -216,6 +270,8 @@ function Chip({
 function Card({
   ticket,
   board,
+  projectsMap,
+  membersMap,
   busy,
   canLeft,
   canRight,
@@ -224,23 +280,33 @@ function Card({
 }: {
   ticket: Ticket;
   board: BoardDef;
+  projectsMap: Map<string, string>;
+  membersMap: Map<string, string>;
   busy: boolean;
   canLeft: boolean;
   canRight: boolean;
   onMove: (ticket: Ticket, dir: -1 | 1) => void;
   onRemove: (ticket: Ticket) => void;
 }) {
+  const assigneeEmail = ticket.assigneeId ? membersMap.get(ticket.assigneeId) : undefined;
+
   return (
     <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3 flex flex-col gap-2">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          {board.fields.map((f) =>
-            ticket[f.key] ? (
+          {board.fields.map((f) => {
+            const val =
+              f.type === "project"
+                ? ticket.projectId
+                  ? projectsMap.get(ticket.projectId)
+                  : undefined
+                : ticket[f.key];
+            return val ? (
               <p key={f.key} className="text-xs text-zinc-500">
-                {ticket[f.key]}
+                {val}
               </p>
-            ) : null
-          )}
+            ) : null;
+          })}
           <p className="text-sm text-black dark:text-zinc-50 break-words">{ticket.title}</p>
         </div>
         <button
@@ -253,25 +319,35 @@ function Card({
           ×
         </button>
       </div>
-      <div className="flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => onMove(ticket, -1)}
-          disabled={busy || !canLeft}
-          aria-label="Move to previous status"
-          className="rounded-full border border-zinc-200 dark:border-zinc-800 px-2 py-0.5 text-xs text-zinc-600 dark:text-zinc-300 disabled:opacity-30 hover:border-zinc-400"
-        >
-          ←
-        </button>
-        <button
-          type="button"
-          onClick={() => onMove(ticket, 1)}
-          disabled={busy || !canRight}
-          aria-label="Move to next status"
-          className="rounded-full border border-zinc-200 dark:border-zinc-800 px-2 py-0.5 text-xs text-zinc-600 dark:text-zinc-300 disabled:opacity-30 hover:border-zinc-400"
-        >
-          →
-        </button>
+
+      <div className="flex items-center justify-between gap-2">
+        {assigneeEmail ? (
+          <span className="rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-xs text-zinc-600 dark:text-zinc-300 truncate">
+            {localPart(assigneeEmail)}
+          </span>
+        ) : (
+          <span />
+        )}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => onMove(ticket, -1)}
+            disabled={busy || !canLeft}
+            aria-label="Move to previous status"
+            className="rounded-full border border-zinc-200 dark:border-zinc-800 px-2 py-0.5 text-xs text-zinc-600 dark:text-zinc-300 disabled:opacity-30 hover:border-zinc-400"
+          >
+            ←
+          </button>
+          <button
+            type="button"
+            onClick={() => onMove(ticket, 1)}
+            disabled={busy || !canRight}
+            aria-label="Move to next status"
+            className="rounded-full border border-zinc-200 dark:border-zinc-800 px-2 py-0.5 text-xs text-zinc-600 dark:text-zinc-300 disabled:opacity-30 hover:border-zinc-400"
+          >
+            →
+          </button>
+        </div>
       </div>
     </div>
   );

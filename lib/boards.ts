@@ -56,9 +56,19 @@ export const BOARDS: readonly Board[] = [
       { id: "done", label: "Done" },
     ],
     initialStatus: "todo",
-    fields: [],
+    fields: [{ key: "projectId", label: "Project", type: "project" }],
   },
 ];
+
+// Fields present on every board's tickets, regardless of board.
+export const UNIVERSAL_FIELDS: readonly FieldSpec[] = [
+  { key: "assigneeId", label: "Assignee", type: "member" },
+];
+
+// A board's own fields plus the universal ones (used by the form + validation).
+export function effectiveFields(board: Board): FieldSpec[] {
+  return [...board.fields, ...UNIVERSAL_FIELDS];
+}
 
 export function getBoardBySlug(slug: string): Board | undefined {
   return BOARDS.find((b) => b.slug === slug);

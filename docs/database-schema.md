@@ -47,12 +47,27 @@ catalog (`api`, `support`, `general`), each with its own columns and fields. A
 | Key | Type | Value | Purpose |
 |-----|------|-------|---------|
 | `org:{orgId}:board:{boardId}:tickets` | set | `ticketId…` | Index of a board's tickets |
-| `org:{orgId}:board:{boardId}:ticket:{id}` | json | `{ id, boardId, title, status, createdAt, updatedAt, …board fields }` | A single ticket |
+| `org:{orgId}:board:{boardId}:ticket:{id}` | json | `{ id, boardId, title, status, createdAt, updatedAt, createdBy, assigneeId?, projectId?, …board fields }` | A single ticket |
 
-Board-specific fields (e.g. `provider`, `priority`) are optional typed columns on
-the ticket; each board's def declares which it uses. `status` is one of the
-board's column ids. (`boardId` is the internal id, e.g. `integrations`, whose URL
-slug is `api`.)
+Fields on a ticket:
+- **`createdBy`** — userId who created it (set from session; **not** shown in the UI).
+- **`assigneeId`** — universal, optional; references an org member (shown on the card as the part before `@`).
+- **`projectId`** — general board only; references a project (see Projects below).
+- Board-specific fields (e.g. `provider`, `priority`) — optional typed columns; each board's def declares which it uses.
+
+`status` is one of the board's column ids. (`boardId` is the internal id, e.g.
+`integrations`, whose URL slug is `api`.)
+
+## Projects
+
+Normalized entities that tickets reference by id (the general board's `projectId`).
+Created inline from the ticket form or on the `/projects` page; names are unique
+per org (case-insensitive).
+
+| Key | Type | Value | Purpose |
+|-----|------|-------|---------|
+| `org:{orgId}:projects` | set | `projectId…` | Index of the org's projects |
+| `org:{orgId}:project:{id}` | json | `{ id, orgId, name, createdAt, createdBy }` | A project |
 
 ## End-of-day (EOD) entries
 
@@ -72,6 +87,7 @@ Entries are authored per-user per-day, and surfaced org-wide.
 Organization  ─ org:{orgId}
    ├─ members ──────< User           eod:user:{userId}   (.orgId → org)
    ├─ boards ───────< Ticket         org:{orgId}:board:{boardId}:ticket:{id}
+   ├─ projects ─────< Project        org:{orgId}:project:{id}   (ticket.projectId →)
    └─ eod_index ────< EOD Entry      eod:user:{userId}:entry:{date}
                                      (authored per-user, indexed at the org)
 ```

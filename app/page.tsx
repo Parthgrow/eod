@@ -56,6 +56,12 @@ export default async function Home() {
         >
           Boards →
         </Link>
+        <Link
+          href="/projects"
+          className="text-sm text-zinc-500 hover:text-black dark:hover:text-white"
+        >
+          Projects →
+        </Link>
       </main>
     </div>
   );

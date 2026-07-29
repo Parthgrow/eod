@@ -1,6 +1,7 @@
 import { requireSession } from "@/lib/dal";
 import { getBoardBySlug } from "@/lib/boards";
 import { setTicketStatus, removeTicket } from "@/lib/tickets-store";
+import { toClientTicket } from "@/lib/tickets";
 
 export async function PATCH(
   request: Request,
@@ -21,7 +22,7 @@ export async function PATCH(
   if ("error" in result) {
     return Response.json({ error: result.error }, { status: 400 });
   }
-  return Response.json({ ticket: result });
+  return Response.json({ ticket: toClientTicket(result) });
 }
 
 export async function DELETE(
