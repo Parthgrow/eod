@@ -35,13 +35,13 @@ export function userOrgsKey(userId: string): string {
   return `eod:user:${userId}:orgs`; // Set<orgId> — user → orgs index (many-to-many seam)
 }
 
-// API integrations board — scoped to an organization.
-export function integrationKey(orgId: string, id: string): string {
-  return `org:${orgId}:integration:${id}`;
+// Boards & tickets — a board's tickets are scoped to an organization.
+export function boardTicketsIndexKey(orgId: string, boardId: string): string {
+  return `org:${orgId}:board:${boardId}:tickets`;
 }
 
-export function integrationsIndexKey(orgId: string): string {
-  return `org:${orgId}:integrations`;
+export function boardTicketKey(orgId: string, boardId: string, ticketId: string): string {
+  return `org:${orgId}:board:${boardId}:ticket:${ticketId}`;
 }
 
 // Org-wide EOD feed — sorted set of `${date}#${userId}` refs, scored by date.

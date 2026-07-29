@@ -51,10 +51,10 @@ export default async function Home() {
           Show all EOD&apos;s
         </Link>
         <Link
-          href="/integrations"
+          href="/board"
           className="text-sm text-zinc-500 hover:text-black dark:hover:text-white"
         >
-          API integrations →
+          Boards →
         </Link>
       </main>
     </div>
