@@ -7,7 +7,7 @@ builders themselves live in `lib/kv-keys.ts`.
 > **Sessions are not in KV.** A signed JWT (`eod_session`, an httpOnly cookie)
 > carries `{ userId, email, orgId }`. See `lib/session.ts`.
 
-_Last updated: 2026-07-29_
+_Last updated: 2026-08-26_
 
 ## Conventions
 
@@ -47,9 +47,12 @@ catalog (`api`, `support`, `general`), each with its own columns and fields. A
 | Key | Type | Value | Purpose |
 |-----|------|-------|---------|
 | `org:{orgId}:board:{boardId}:tickets` | set | `ticketId…` | Index of a board's tickets |
-| `org:{orgId}:board:{boardId}:ticket:{id}` | json | `{ id, boardId, title, status, createdAt, updatedAt, createdBy, assigneeId?, projectId?, …board fields }` | A single ticket |
+| `org:{orgId}:board:{boardId}:ticket:{id}` | json | `{ id, boardId, title, description?, status, createdAt, updatedAt, createdBy, assigneeId?, projectId?, …board fields }` | A single ticket |
 
 Fields on a ticket:
+- **`title`** — required, editable.
+- **`description`** — universal, optional freeform text; absent when blank (an
+  empty edit removes the key rather than storing `""`).
 - **`createdBy`** — userId who created it (set from session; **not** shown in the UI).
 - **`assigneeId`** — universal, optional; references an org member (shown on the card as the part before `@`).
 - **`projectId`** — general board only; references a project (see Projects below).

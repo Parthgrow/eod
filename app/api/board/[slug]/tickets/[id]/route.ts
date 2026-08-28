@@ -1,6 +1,6 @@
 import { requireSession } from "@/lib/dal";
 import { getBoardBySlug } from "@/lib/boards";
-import { setTicketStatus, removeTicket } from "@/lib/tickets-store";
+import { updateTicket, removeTicket } from "@/lib/tickets-store";
 import { toClientTicket } from "@/lib/tickets";
 
 export async function PATCH(
@@ -14,8 +14,14 @@ export async function PATCH(
   const board = getBoardBySlug(slug);
   if (!board) return Response.json({ error: "Unknown board." }, { status: 404 });
 
-  const { status } = (await request.json()) as { status?: string };
-  const result = await setTicketStatus(session.orgId, board, id, status ?? "");
+  // A move (status) and an edit (title / description) share this one handler;
+  // only the keys the client sends are applied.
+  const { status, title, description } = (await request.json()) as {
+    status?: string;
+    title?: string;
+    description?: string;
+  };
+  const result = await updateTicket(session.orgId, board, id, { status, title, description });
   if (result === null) {
     return Response.json({ error: "Ticket not found." }, { status: 404 });
   }
