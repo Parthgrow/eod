@@ -8,6 +8,7 @@ export type Ticket = {
   id: string;
   boardId: string;
   title: string;
+  description?: string; // freeform notes; optional on every board
   status: string; // one of the board's column ids
   createdAt: number;
   updatedAt: number;

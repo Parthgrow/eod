@@ -30,6 +30,8 @@ export async function createTicket(
   const title = typeof input.title === "string" ? input.title.trim() : "";
   if (!title) return { error: "Title is required." };
 
+  const description = typeof input.description === "string" ? input.description.trim() : "";
+
   // Collect + validate the board's fields plus the universal ones (e.g. assignee).
   const extra: Partial<Ticket> = {};
   for (const spec of effectiveFields(board)) {
@@ -61,6 +63,7 @@ export async function createTicket(
     id: crypto.randomUUID(),
     boardId: board.id,
     title,
+    ...(description ? { description } : {}),
     status: board.initialStatus,
     createdAt: now,
     updatedAt: now,
@@ -74,18 +77,52 @@ export async function createTicket(
   return ticket;
 }
 
-export async function setTicketStatus(
+// A ticket's own editable fields. Only the keys present are touched, so the same
+// call covers a column move (status) and an edit of the freeform text.
+export type TicketEdits = {
+  status?: string;
+  title?: string;
+  description?: string;
+};
+
+export async function updateTicket(
   orgId: string,
   board: Board,
   id: string,
-  status: string
+  edits: TicketEdits
 ): Promise<Ticket | null | { error: string }> {
-  if (!isColumn(board, status)) return { error: "Invalid status." };
+  const patch: Partial<Ticket> = {};
+
+  if (edits.status !== undefined) {
+    if (!isColumn(board, edits.status)) return { error: "Invalid status." };
+    patch.status = edits.status;
+  }
+
+  if (edits.title !== undefined) {
+    const title = edits.title.trim();
+    if (!title) return { error: "Title is required." };
+    patch.title = title;
+  }
+
+  // An empty description means "remove it", so the field is dropped rather than
+  // stored as "" — keeping absent and blank the same thing everywhere.
+  let clearDescription = false;
+  if (edits.description !== undefined) {
+    const description = edits.description.trim();
+    if (description) patch.description = description;
+    else clearDescription = true;
+  }
+
+  if (!clearDescription && Object.keys(patch).length === 0) {
+    return { error: "Nothing to update." };
+  }
 
   const existing = await kv.get<Ticket>(boardTicketKey(orgId, board.id, id));
   if (!existing) return null;
 
-  const updated: Ticket = { ...existing, status, updatedAt: Date.now() };
+  const updated: Ticket = { ...existing, ...patch, updatedAt: Date.now() };
+  if (clearDescription) delete updated.description;
+
   await kv.set(boardTicketKey(orgId, board.id, id), updated);
   return updated;
 }
