@@ -22,6 +22,7 @@ export const BOARDS: readonly Board[] = [
     title: "API integrations",
     columns: [
       { id: "pending", label: "Pending" },
+      { id: "procurement", label: "Procurement" },
       { id: "uat_access_given", label: "UAT access given" },
       { id: "uat_tested", label: "UAT tested" },
       { id: "production_tested", label: "Production tested" },
@@ -42,9 +43,7 @@ export const BOARDS: readonly Board[] = [
       { id: "closed", label: "Closed" },
     ],
     initialStatus: "open",
-    fields: [
-      { key: "priority", label: "Priority", type: "select", options: ["low", "medium", "high"], required: true },
-    ],
+    fields: [],
   },
   {
     id: "general",
@@ -60,8 +59,12 @@ export const BOARDS: readonly Board[] = [
   },
 ];
 
+// Ticket priority — universal, optional, same three levels on every board.
+export const PRIORITIES = ["p1", "p2", "p3"] as const;
+
 // Fields present on every board's tickets, regardless of board.
 export const UNIVERSAL_FIELDS: readonly FieldSpec[] = [
+  { key: "priority", label: "Priority", type: "select", options: PRIORITIES },
   { key: "assigneeId", label: "Assignee", type: "member" },
 ];
 

@@ -16,12 +16,18 @@ export async function PATCH(
 
   // A move (status) and an edit (title / description) share this one handler;
   // only the keys the client sends are applied.
-  const { status, title, description } = (await request.json()) as {
+  const { status, title, description, priority } = (await request.json()) as {
     status?: string;
     title?: string;
     description?: string;
+    priority?: string;
   };
-  const result = await updateTicket(session.orgId, board, id, { status, title, description });
+  const result = await updateTicket(session.orgId, board, id, {
+    status,
+    title,
+    description,
+    priority,
+  });
   if (result === null) {
     return Response.json({ error: "Ticket not found." }, { status: 404 });
   }

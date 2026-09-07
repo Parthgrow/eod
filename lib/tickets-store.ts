@@ -1,7 +1,7 @@
 import "server-only";
 import { kv } from "@vercel/kv";
 import { boardTicketKey, boardTicketsIndexKey, orgMembersKey } from "@/lib/kv-keys";
-import { effectiveFields, isColumn, type Board } from "@/lib/boards";
+import { effectiveFields, isColumn, PRIORITIES, type Board } from "@/lib/boards";
 import { findOrCreateProjectByName } from "@/lib/projects-store";
 import type { Ticket } from "@/lib/tickets";
 
@@ -83,6 +83,7 @@ export type TicketEdits = {
   status?: string;
   title?: string;
   description?: string;
+  priority?: string;
 };
 
 export async function updateTicket(
@@ -113,7 +114,20 @@ export async function updateTicket(
     else clearDescription = true;
   }
 
-  if (!clearDescription && Object.keys(patch).length === 0) {
+  // Priority is universal and optional; an empty value clears it, same as description.
+  let clearPriority = false;
+  if (edits.priority !== undefined) {
+    const priority = edits.priority.trim();
+    if (!priority) {
+      clearPriority = true;
+    } else if (!(PRIORITIES as readonly string[]).includes(priority)) {
+      return { error: "Priority is invalid." };
+    } else {
+      patch.priority = priority;
+    }
+  }
+
+  if (!clearDescription && !clearPriority && Object.keys(patch).length === 0) {
     return { error: "Nothing to update." };
   }
 
@@ -122,6 +136,7 @@ export async function updateTicket(
 
   const updated: Ticket = { ...existing, ...patch, updatedAt: Date.now() };
   if (clearDescription) delete updated.description;
+  if (clearPriority) delete updated.priority;
 
   await kv.set(boardTicketKey(orgId, board.id, id), updated);
   return updated;

@@ -7,7 +7,7 @@ builders themselves live in `lib/kv-keys.ts`.
 > **Sessions are not in KV.** A signed JWT (`eod_session`, an httpOnly cookie)
 > carries `{ userId, email, orgId }`. See `lib/session.ts`.
 
-_Last updated: 2026-08-26_
+_Last updated: 2026-09-07_
 
 ## Conventions
 
@@ -54,9 +54,18 @@ Fields on a ticket:
 - **`description`** — universal, optional freeform text; absent when blank (an
   empty edit removes the key rather than storing `""`).
 - **`createdBy`** — userId who created it (set from session; **not** shown in the UI).
+- **`priority`** — universal, optional; one of `p1`, `p2`, `p3`. Editable inline
+  on the card; an empty value removes the key. (Was previously a support-board
+  field with `low`/`medium`/`high` — see the migration note below.)
 - **`assigneeId`** — universal, optional; references an org member (shown on the card as the part before `@`).
 - **`projectId`** — general board only; references a project (see Projects below).
-- Board-specific fields (e.g. `provider`, `priority`) — optional typed columns; each board's def declares which it uses.
+- Board-specific fields (e.g. `provider`) — optional typed columns; each board's def declares which it uses.
+
+> **Legacy priority values.** Support tickets created before priority became
+> universal hold `low` / `medium` / `high`. They still display and still filter;
+> the card editor keeps the old value selectable so an unrelated edit can't
+> silently drop it. Nothing migrates them automatically — map them to
+> `high→p1`, `medium→p2`, `low→p3` if you want them normalised.
 
 `status` is one of the board's column ids. (`boardId` is the internal id, e.g.
 `integrations`, whose URL slug is `api`.)
