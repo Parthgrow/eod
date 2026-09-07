@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { effectiveFields, type Board as BoardDef } from "@/lib/boards";
+import { effectiveFields, PRIORITIES, type Board as BoardDef } from "@/lib/boards";
 import type { Ticket, TicketFieldKey } from "@/lib/tickets";
 
 type Member = { userId: string; email: string };
@@ -42,9 +42,11 @@ export default function Board({
   const projectsMap = useMemo(() => new Map(projects.map((p) => [p.id, p.name])), [projects]);
   const membersMap = useMemo(() => new Map(members.map((m) => [m.userId, m.email])), [members]);
 
-  // Filter on the board's first plain (text/select) field, if any — reference
-  // fields (member/project) aren't filterable here.
-  const filterField = board.fields.find((f) => f.type === "text" || f.type === "select");
+  // Filter on the first plain (text/select) field, board-specific ones first and
+  // then the universal ones — reference fields (member/project) aren't filterable.
+  const filterField = effectiveFields(board).find(
+    (f) => f.type === "text" || f.type === "select"
+  );
   const [filterValue, setFilterValue] = useState<string | null>(null);
 
   const valuesOf = useMemo(() => {
@@ -124,7 +126,7 @@ export default function Board({
   // the card can keep its editor open and show what went wrong.
   async function saveEdits(
     ticket: Ticket,
-    edits: { title: string; description: string }
+    edits: { title: string; description: string; priority: string }
   ): Promise<string | null> {
     setBusyId(ticket.id, true);
     const res = await fetch(`/api/board/${board.slug}/tickets/${ticket.id}`, {
@@ -333,7 +335,7 @@ function Card({
   onRemove: (ticket: Ticket) => void;
   onSave: (
     ticket: Ticket,
-    edits: { title: string; description: string }
+    edits: { title: string; description: string; priority: string }
   ) => Promise<string | null>;
 }) {
   const assigneeEmail = ticket.assigneeId ? membersMap.get(ticket.assigneeId) : undefined;
@@ -342,6 +344,7 @@ function Card({
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState(ticket.title);
   const [draftDescription, setDraftDescription] = useState(description);
+  const [draftPriority, setDraftPriority] = useState(ticket.priority ?? "");
   const [editError, setEditError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
 
@@ -351,6 +354,7 @@ function Card({
   function startEditing() {
     setDraftTitle(ticket.title);
     setDraftDescription(description);
+    setDraftPriority(ticket.priority ?? "");
     setEditError(null);
     setEditing(true);
   }
@@ -370,6 +374,7 @@ function Card({
     const error = await onSave(ticket, {
       title: draftTitle.trim(),
       description: draftDescription.trim(),
+      priority: draftPriority,
     });
     if (error) setEditError(error);
     else cancelEditing();
@@ -388,6 +393,23 @@ function Card({
           autoFocus
           className={cardInputCls}
         />
+        <select
+          value={draftPriority}
+          onChange={(e) => setDraftPriority(e.target.value)}
+          className={cardInputCls}
+        >
+          <option value="">No priority</option>
+          {PRIORITIES.map((p) => (
+            <option key={p} value={p}>
+              {p.toUpperCase()}
+            </option>
+          ))}
+          {/* Keep a pre-existing value that isn't one of the current options
+              (e.g. an older "high") selectable, so editing doesn't silently drop it. */}
+          {draftPriority && !(PRIORITIES as readonly string[]).includes(draftPriority) && (
+            <option value={draftPriority}>{draftPriority}</option>
+          )}
+        </select>
         <textarea
           value={draftDescription}
           onChange={(e) => setDraftDescription(e.target.value)}
@@ -480,13 +502,18 @@ function Card({
       </div>
 
       <div className="flex items-center justify-between gap-2">
-        {assigneeEmail ? (
-          <span className="rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-xs text-zinc-600 dark:text-zinc-300 truncate">
-            {localPart(assigneeEmail)}
-          </span>
-        ) : (
-          <span />
-        )}
+        <div className="flex items-center gap-1.5 min-w-0">
+          {ticket.priority && (
+            <span className="shrink-0 rounded-full border border-zinc-300 dark:border-zinc-700 px-2 py-0.5 text-xs font-medium uppercase text-zinc-600 dark:text-zinc-300">
+              {ticket.priority}
+            </span>
+          )}
+          {assigneeEmail && (
+            <span className="rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-xs text-zinc-600 dark:text-zinc-300 truncate">
+              {localPart(assigneeEmail)}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
