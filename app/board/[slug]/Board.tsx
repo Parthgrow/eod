@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { effectiveFields, PRIORITIES, type Board as BoardDef } from "@/lib/boards";
+import { effectiveFields, PRIORITIES, ticketLabel, type Board as BoardDef } from "@/lib/boards";
 import type { Ticket, TicketFieldKey } from "@/lib/tickets";
+import TicketPanel from "@/app/board/[slug]/TicketPanel";
 
 type Member = { userId: string; email: string };
 type ProjectOption = { id: string; name: string };
@@ -19,19 +20,56 @@ const cardInputCls =
 
 const localPart = (email: string) => email.split("@")[0];
 
+// A PATCH response is the raw ticket JSON, which doesn't carry the derived id /
+// counts — keep those from the copy we already have.
+function withDerived(old: Ticket, updated: Ticket): Ticket {
+  return {
+    ...updated,
+    number: old.number,
+    messageCount: old.messageCount,
+    payloadCount: old.payloadCount,
+  };
+}
+
 export default function Board({
   board,
   initial,
   members,
   projects,
+  currentUserId,
+  initialOpenNumber,
 }: {
   board: BoardDef;
   initial: Ticket[];
   members: Member[];
   projects: ProjectOption[];
+  currentUserId: string;
+  initialOpenNumber?: number; // from ?ticket=SUP-42, opens that ticket's panel
 }) {
   const [items, setItems] = useState(initial);
   const [busy, setBusy] = useState<Set<string>>(new Set());
+
+  const [openId, setOpenId] = useState<string | null>(
+    () => (initialOpenNumber ? initial.find((t) => t.number === initialOpenNumber)?.id : undefined) ?? null
+  );
+  const openTicket = openId ? items.find((t) => t.id === openId) ?? null : null;
+
+  // Keep the URL in step with the panel so it can be shared / survives a refresh.
+  // replaceState (not router.push) — opening a panel shouldn't re-render the page.
+  function openPanel(ticket: Ticket) {
+    setOpenId(ticket.id);
+    const label = ticketLabel(board, ticket);
+    if (label) window.history.replaceState(null, "", `?ticket=${label}`);
+  }
+
+  function closePanel() {
+    setOpenId(null);
+    window.history.replaceState(null, "", window.location.pathname);
+  }
+
+  function updateCounts(ticketId: string, counts: { messageCount?: number; payloadCount?: number }) {
+    setItems((prev) => prev.map((t) => (t.id === ticketId ? { ...t, ...counts } : t)));
+  }
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -104,22 +142,24 @@ export default function Board({
     setAdding(false);
   }
 
-  async function move(ticket: Ticket, dir: -1 | 1) {
-    const idx = board.columns.findIndex((c) => c.id === ticket.status);
-    const next = board.columns[idx + dir];
-    if (!next) return;
-
+  async function setStatus(ticket: Ticket, status: string) {
     setBusyId(ticket.id, true);
     const res = await fetch(`/api/board/${board.slug}/tickets/${ticket.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: next.id }),
+      body: JSON.stringify({ status }),
     });
     if (res.ok) {
       const { ticket: updated } = (await res.json()) as { ticket: Ticket };
-      setItems((prev) => prev.map((t) => (t.id === ticket.id ? updated : t)));
+      setItems((prev) => prev.map((t) => (t.id === ticket.id ? withDerived(t, updated) : t)));
     }
     setBusyId(ticket.id, false);
+  }
+
+  function move(ticket: Ticket, dir: -1 | 1) {
+    const idx = board.columns.findIndex((c) => c.id === ticket.status);
+    const next = board.columns[idx + dir];
+    if (next) void setStatus(ticket, next.id);
   }
 
   // Title / description edit. Returns an error message, or null on success, so
@@ -138,7 +178,7 @@ export default function Board({
 
     if (res.ok) {
       const { ticket: updated } = (await res.json()) as { ticket: Ticket };
-      setItems((prev) => prev.map((t) => (t.id === ticket.id ? updated : t)));
+      setItems((prev) => prev.map((t) => (t.id === ticket.id ? withDerived(t, updated) : t)));
       return null;
     }
     const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -148,8 +188,10 @@ export default function Board({
   async function remove(ticket: Ticket) {
     setBusyId(ticket.id, true);
     const res = await fetch(`/api/board/${board.slug}/tickets/${ticket.id}`, { method: "DELETE" });
-    if (res.ok) setItems((prev) => prev.filter((t) => t.id !== ticket.id));
-    else setBusyId(ticket.id, false);
+    if (res.ok) {
+      setItems((prev) => prev.filter((t) => t.id !== ticket.id));
+      if (openId === ticket.id) closePanel();
+    } else setBusyId(ticket.id, false);
   }
 
   return (
@@ -276,6 +318,7 @@ export default function Board({
                     onMove={move}
                     onRemove={remove}
                     onSave={saveEdits}
+                    onOpen={openPanel}
                   />
                 ))}
               </div>
@@ -283,6 +326,23 @@ export default function Board({
           );
         })}
       </div>
+
+      {openTicket && (
+        <TicketPanel
+          key={openTicket.id}
+          board={board}
+          ticket={openTicket}
+          membersMap={membersMap}
+          projectsMap={projectsMap}
+          currentUserId={currentUserId}
+          busy={busy.has(openTicket.id)}
+          onClose={closePanel}
+          onSaveEdits={saveEdits}
+          onSetStatus={setStatus}
+          onRemove={remove}
+          onCounts={updateCounts}
+        />
+      )}
     </div>
   );
 }
@@ -323,6 +383,7 @@ function Card({
   onMove,
   onRemove,
   onSave,
+  onOpen,
 }: {
   ticket: Ticket;
   board: BoardDef;
@@ -337,9 +398,11 @@ function Card({
     ticket: Ticket,
     edits: { title: string; description: string; priority: string }
   ) => Promise<string | null>;
+  onOpen: (ticket: Ticket) => void;
 }) {
   const assigneeEmail = ticket.assigneeId ? membersMap.get(ticket.assigneeId) : undefined;
   const description = ticket.description ?? "";
+  const label = ticketLabel(board, ticket);
 
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState(ticket.title);
@@ -443,6 +506,7 @@ function Card({
     <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3 flex flex-col gap-2">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
+          {label && <p className="text-[11px] font-medium text-zinc-400">{label}</p>}
           {board.fields.map((f) => {
             const val =
               f.type === "project"
@@ -482,6 +546,15 @@ function Card({
         <div className="shrink-0 flex items-center gap-2 leading-none">
           <button
             type="button"
+            onClick={() => onOpen(ticket)}
+            aria-label="Open ticket details"
+            title="Open details"
+            className="text-sm text-zinc-400 hover:text-black dark:hover:text-white"
+          >
+            ⤢
+          </button>
+          <button
+            type="button"
             onClick={startEditing}
             disabled={busy}
             aria-label="Edit ticket"
@@ -511,6 +584,16 @@ function Card({
           {assigneeEmail && (
             <span className="rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-xs text-zinc-600 dark:text-zinc-300 truncate">
               {localPart(assigneeEmail)}
+            </span>
+          )}
+          {board.features.conversation && (ticket.messageCount ?? 0) > 0 && (
+            <span className="shrink-0 text-xs text-zinc-400" title="Messages">
+              💬 {ticket.messageCount}
+            </span>
+          )}
+          {board.features.payloads && (ticket.payloadCount ?? 0) > 0 && (
+            <span className="shrink-0 text-xs text-zinc-400" title="Payloads">
+              ⇄ {ticket.payloadCount}
             </span>
           )}
         </div>

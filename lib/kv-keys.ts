@@ -44,6 +44,29 @@ export function boardTicketKey(orgId: string, boardId: string, ticketId: string)
   return `org:${orgId}:board:${boardId}:ticket:${ticketId}`;
 }
 
+// Per-board ticket numbering + counters. Kept in their own keys (not in the ticket
+// JSON) so numbering never rewrites existing tickets and counts update atomically.
+export function ticketSeqKey(orgId: string, boardId: string): string {
+  return `org:${orgId}:board:${boardId}:seq`; // string (int) — last issued number
+}
+
+export function ticketMetaKey(orgId: string, boardId: string): string {
+  // Hash — `{ticketId}:n` number, `{ticketId}:m` message count, `{ticketId}:p` payload count
+  return `org:${orgId}:board:${boardId}:ticket_meta`;
+}
+
+export function ticketNumbersKey(orgId: string, boardId: string): string {
+  return `org:${orgId}:board:${boardId}:ticket_numbers`; // Hash — number → ticketId
+}
+
+export function ticketMessagesKey(orgId: string, boardId: string, ticketId: string): string {
+  return `org:${orgId}:board:${boardId}:ticket:${ticketId}:messages`; // Hash — messageId → json
+}
+
+export function ticketPayloadsKey(orgId: string, boardId: string, ticketId: string): string {
+  return `org:${orgId}:board:${boardId}:ticket:${ticketId}:payloads`; // Hash — payloadId → json
+}
+
 // Projects — a normalized entity referenced by tickets, scoped to an organization.
 export function projectsIndexKey(orgId: string): string {
   return `org:${orgId}:projects`;

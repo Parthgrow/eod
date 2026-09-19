@@ -7,7 +7,7 @@ builders themselves live in `lib/kv-keys.ts`.
 > **Sessions are not in KV.** A signed JWT (`eod_session`, an httpOnly cookie)
 > carries `{ userId, email, orgId }`. See `lib/session.ts`.
 
-_Last updated: 2026-09-07_
+_Last updated: 2026-09-19_
 
 ## Conventions
 
@@ -48,6 +48,26 @@ catalog (`api`, `support`, `general`), each with its own columns and fields. A
 |-----|------|-------|---------|
 | `org:{orgId}:board:{boardId}:tickets` | set | `ticketId…` | Index of a board's tickets |
 | `org:{orgId}:board:{boardId}:ticket:{id}` | json | `{ id, boardId, title, description?, status, createdAt, updatedAt, createdBy, assigneeId?, projectId?, …board fields }` | A single ticket |
+| `org:{orgId}:board:{boardId}:seq` | string (int) | last issued number | Counter behind the human ticket id (`SUP-42`) |
+| `org:{orgId}:board:{boardId}:ticket_meta` | hash | `{id}:n` number, `{id}:m` message count, `{id}:p` payload count | Per-ticket number + counters, kept out of the ticket JSON |
+| `org:{orgId}:board:{boardId}:ticket_numbers` | hash | `number → ticketId` | Look a ticket up by its number |
+| `org:{orgId}:board:{boardId}:ticket:{id}:messages` | hash | `messageId → { id, ticketId, kind: "request"\|"response", body, authorId, authorEmail, createdAt, editedAt? }` | The ticket's conversation (sorted by `createdAt` in the app) |
+| `org:{orgId}:board:{boardId}:ticket:{id}:payloads` | hash | `payloadId → { id, ticketId, request: { body, method?, url? }, response: { body, status? }, createdBy, createdAt, updatedAt? }` | API request/response pairs (sorted by `createdAt` in the app) |
+
+**Ticket number (`SUP-42`).** Each board has a `prefix` in `lib/boards.ts`
+(`API`, `SUP`, `GEN`). A ticket's number is assigned on create, and lazily the
+first time an older ticket is listed (oldest first) — only `ticket_meta` /
+`ticket_numbers` are written, never the ticket JSON. The first writer of
+`{id}:n` wins (`HSETNX`), so concurrent loads can't double-number a ticket;
+a lost race just leaves a gap in the sequence.
+
+**Conversation and payloads** are per-board features (`features` in
+`lib/boards.ts`; Support has both, API integrations has payloads only) shown in
+the ticket side panel. They are hashes keyed by item id so one item can be
+edited or deleted atomically. Limits: 200 messages / 50 payloads per ticket,
+100KB per payload body. Messages are author-only edit/delete; payloads can be
+edited by any org member. Deleting a ticket deletes its messages, payloads,
+number and counters.
 
 Fields on a ticket:
 - **`title`** — required, editable.

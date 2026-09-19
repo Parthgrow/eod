@@ -9,9 +9,20 @@ import { listProjects } from "@/lib/projects-store";
 import Board from "@/app/board/[slug]/Board";
 import BoardTabs from "@/app/board/BoardTabs";
 
-export default async function BoardPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function BoardPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ ticket?: string }>;
+}) {
   const session = await verifySession();
   const { slug } = await params;
+  const { ticket: ticketParam } = await searchParams;
+
+  // ?ticket=SUP-42 deep-links straight into that ticket's side panel.
+  const openMatch = /^[A-Za-z]+-(\d+)$/.exec(ticketParam ?? "");
+  const initialOpenNumber = openMatch ? Number(openMatch[1]) : undefined;
 
   const board = getBoardBySlug(slug);
   if (!board) notFound();
@@ -36,6 +47,8 @@ export default async function BoardPage({ params }: { params: Promise<{ slug: st
           initial={tickets.map(toClientTicket)}
           members={members}
           projects={projects.map((p) => ({ id: p.id, name: p.name }))}
+          currentUserId={session.userId}
+          initialOpenNumber={initialOpenNumber}
         />
       </main>
     </div>
