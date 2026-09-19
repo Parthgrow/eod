@@ -18,7 +18,43 @@ export type Ticket = {
   priority?: string;
   projectId?: string; // reference to a project (general board)
   assigneeId?: string; // reference to an org member (universal)
+  // Derived, not stored in the ticket JSON: the store merges these in from the
+  // per-board meta hash when tickets are listed / created.
+  number?: number; // per-board sequence, shown as e.g. SUP-42
+  messageCount?: number;
+  payloadCount?: number;
 };
+
+// A note in a ticket's conversation. "request" = what the other side asked,
+// "response" = what we replied.
+export type TicketMessage = {
+  id: string;
+  ticketId: string;
+  kind: "request" | "response";
+  body: string;
+  authorId: string;
+  authorEmail: string;
+  createdAt: number;
+  editedAt?: number;
+};
+
+// One API request/response pair attached to a ticket. Bodies are raw text (often
+// JSON, but not always), so nothing is parsed on the way in.
+export type TicketPayload = {
+  id: string;
+  ticketId: string;
+  request: { body: string; method?: string; url?: string };
+  response: { body: string; status?: number };
+  createdBy?: string; // userId — server-side only, stripped before it reaches the browser
+  createdAt: number;
+  updatedAt?: number;
+};
+
+export function toClientPayload(payload: TicketPayload): TicketPayload {
+  const copy = { ...payload };
+  delete copy.createdBy;
+  return copy;
+}
 
 export type FieldSpec = {
   key: TicketFieldKey;

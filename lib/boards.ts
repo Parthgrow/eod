@@ -13,6 +13,9 @@ export type Board = {
   columns: Column[];
   initialStatus: string;
   fields: FieldSpec[]; // which ticket fields this board shows / collects
+  prefix: string; // human ticket id prefix, e.g. "SUP" -> SUP-42
+  // Which extra sections the ticket side panel offers on this board.
+  features: { conversation: boolean; payloads: boolean };
 };
 
 export const BOARDS: readonly Board[] = [
@@ -30,6 +33,8 @@ export const BOARDS: readonly Board[] = [
     ],
     initialStatus: "pending",
     fields: [{ key: "provider", label: "Provider", type: "text", required: true }],
+    prefix: "API",
+    features: { conversation: false, payloads: true },
   },
   {
     id: "support",
@@ -44,6 +49,8 @@ export const BOARDS: readonly Board[] = [
     ],
     initialStatus: "open",
     fields: [],
+    prefix: "SUP",
+    features: { conversation: true, payloads: true },
   },
   {
     id: "general",
@@ -56,8 +63,15 @@ export const BOARDS: readonly Board[] = [
     ],
     initialStatus: "todo",
     fields: [{ key: "projectId", label: "Project", type: "project" }],
+    prefix: "GEN",
+    features: { conversation: false, payloads: false },
   },
 ];
+
+// The human-facing ticket id, e.g. "SUP-42". Empty until the ticket has a number.
+export function ticketLabel(board: Pick<Board, "prefix">, ticket: { number?: number }): string {
+  return ticket.number ? `${board.prefix}-${ticket.number}` : "";
+}
 
 // Ticket priority — universal, optional, same three levels on every board.
 export const PRIORITIES = ["p1", "p2", "p3"] as const;
