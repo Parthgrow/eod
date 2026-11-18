@@ -67,6 +67,10 @@ export function ticketPayloadsKey(orgId: string, boardId: string, ticketId: stri
   return `org:${orgId}:board:${boardId}:ticket:${ticketId}:payloads`; // Hash — payloadId → json
 }
 
+export function boardTagsKey(orgId: string, boardId: string): string {
+  return `org:${orgId}:board:${boardId}:tags`; // Hash — tagId → { id, name, createdAt, createdBy? }
+}
+
 // Projects — a normalized entity referenced by tickets, scoped to an organization.
 export function projectsIndexKey(orgId: string): string {
   return `org:${orgId}:projects`;

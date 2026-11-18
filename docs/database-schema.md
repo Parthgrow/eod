@@ -7,7 +7,7 @@ builders themselves live in `lib/kv-keys.ts`.
 > **Sessions are not in KV.** A signed JWT (`eod_session`, an httpOnly cookie)
 > carries `{ userId, email, orgId }`. See `lib/session.ts`.
 
-_Last updated: 2026-11-18_
+_Last updated: 2026-11-18 (LOS & CRM board, tags)_
 
 ## Conventions
 
@@ -53,7 +53,7 @@ or `personal:{userId}` for public-domain / solo users.
 ## Boards & tickets
 
 Boards are **defined in code** (`lib/boards.ts`), not stored in KV — a fixed
-catalog (`api`, `support`, `general`), each with its own columns and fields. A
+catalog (`api`, `support`, `general`, `los`), each with its own columns and fields. A
 **ticket** is the atomic card; it lives on one board, scoped to the org.
 
 | Key | Type | Value | Purpose |
@@ -64,6 +64,7 @@ catalog (`api`, `support`, `general`), each with its own columns and fields. A
 | `org:{orgId}:board:{boardId}:ticket_meta` | hash | `{id}:n` number, `{id}:m` message count, `{id}:p` payload count | Per-ticket number + counters, kept out of the ticket JSON |
 | `org:{orgId}:board:{boardId}:ticket_numbers` | hash | `number → ticketId` | Look a ticket up by its number |
 | `org:{orgId}:board:{boardId}:ticket:{id}:messages` | hash | `messageId → { id, ticketId, kind: "request"\|"response", body, authorId, authorEmail, createdAt, editedAt? }` | The ticket's conversation (sorted by `createdAt` in the app) |
+| `org:{orgId}:board:{boardId}:tags` | hash | `tagId → { id, name, createdAt, createdBy? }` | The board's tag catalog (boards with `tags` in `lib/boards.ts` only) |
 | `org:{orgId}:board:{boardId}:ticket:{id}:payloads` | hash | `payloadId → { id, ticketId, request: { body, method?, url? }, response: { body, status? }, createdBy, createdAt, updatedAt? }` | API request/response pairs (sorted by `createdAt` in the app) |
 
 **Ticket number (`SUP-42`).** Each board has a `prefix` in `lib/boards.ts`
@@ -72,6 +73,15 @@ first time an older ticket is listed (oldest first) — only `ticket_meta` /
 `ticket_numbers` are written, never the ticket JSON. The first writer of
 `{id}:n` wins (`HSETNX`), so concurrent loads can't double-number a ticket;
 a lost race just leaves a gap in the sequence.
+
+**Tags (multi-select).** A board can declare `tags` in `lib/boards.ts` (today
+only **LOS & CRM**, `los`, whose tags say which LOS a card affects: several
+LOS instances run on one codebase). The catalog hash is seeded with the board's
+`defaults` (`Richpay`, `Richman`, `Kuberloan`) via `HSETNX` the first time it is
+read, so nothing needs migrating. Users add more from the board. A tag's `id` is
+its lowercased, dashed name (`Rich Pay` → `rich-pay`), which keeps names unique
+per board. Tickets store tag **ids** in `tags`; limits: 50 tags per board, 10 per
+ticket, 30 characters per name.
 
 **Conversation and payloads** are per-board features (`features` in
 `lib/boards.ts`; Support has both, API integrations has payloads only) shown in
@@ -90,6 +100,8 @@ Fields on a ticket:
   on the card; an empty value removes the key. (Was previously a support-board
   field with `low`/`medium`/`high` — see the migration note below.)
 - **`assigneeId`** — universal, optional; references an org member (shown on the card as the part before `@`).
+- **`tags`** — boards with tags only (`los`); an array of tag ids, absent when
+  empty (an empty edit removes the key). Stored in catalog order.
 - **`projectId`** — general board only; references a project (see Projects below).
 - Board-specific fields (e.g. `provider`) — optional typed columns; each board's def declares which it uses.
 

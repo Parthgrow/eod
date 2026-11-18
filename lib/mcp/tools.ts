@@ -34,7 +34,8 @@ import {
   removeTicket,
   updateTicket,
 } from "@/lib/tickets-store";
-import { toClientPayload, toClientTicket, type Ticket } from "@/lib/tickets";
+import { toClientPayload, toClientTicket, type Tag, type Ticket } from "@/lib/tickets";
+import { createTag, listTags, tagIdFor } from "@/lib/tags-store";
 
 // The EOD app's MCP tools. Transport-agnostic: the stdio script and the HTTP
 // route both build an McpServer and call registerTools(server, userId).
@@ -46,6 +47,7 @@ export const MCP_SERVER_INFO = { name: "eod", version: "1.0.0" } as const;
 
 export const MCP_INSTRUCTIONS = `Tools for the EOD app: end-of-day (EOD) updates, ticket boards and projects for the user's workspace.
 - Boards: ${BOARDS.map((b) => `"${b.slug}" (${b.title}, ids like ${b.prefix}-12)`).join(", ")}. Call list_boards for columns and fields.
+- Boards with tags (${BOARDS.filter((b) => b.tags).map((b) => `"${b.slug}"`).join(", ")}) let a ticket carry several tags, e.g. which LOS it affects. Call list_tags for the names.
 - Tickets are referenced by their human id (e.g. SUP-42); a raw ticket uuid also works if you pass its board.
 - Dates are YYYY-MM-DD (UTC calendar day). "Today" is the current UTC day.
 - Everything is scoped to the user's workspace; teammates see the same tickets, projects and EOD feed.`;
@@ -130,11 +132,24 @@ function resolveMember(members: OrgMember[], who: string): OrgMember {
   return m;
 }
 
-type Lookups = { members: OrgMember[]; projects: Project[] };
+type Lookups = { members: OrgMember[]; projects: Project[]; tags: Tag[] };
 
-async function lookups(orgId: string): Promise<Lookups> {
-  const [members, projects] = await Promise.all([listMembers(orgId), listProjects(orgId)]);
-  return { members, projects };
+async function lookups(orgId: string, board?: Board): Promise<Lookups> {
+  const [members, projects, tags] = await Promise.all([
+    listMembers(orgId),
+    listProjects(orgId),
+    board ? listTags(orgId, board) : Promise.resolve([]),
+  ]);
+  return { members, projects, tags };
+}
+
+function tagBoardOrThrow(slug: string): Board {
+  const board = boardOrThrow(slug);
+  if (!board.tags) {
+    const withTags = BOARDS.filter((b) => b.tags).map((b) => b.slug);
+    throw new ToolError(`The ${board.slug} board doesn't use tags. Boards with tags: ${withTags.join(", ")}.`);
+  }
+  return board;
 }
 
 // The ticket as tools return it: human id, board slug, and names next to ids.
@@ -148,6 +163,7 @@ function present(board: Board, ticket: Ticket, l: Lookups) {
     statusLabel: board.columns.find((c) => c.id === t.status)?.label ?? t.status,
     assigneeEmail: t.assigneeId ? l.members.find((m) => m.userId === t.assigneeId)?.email : undefined,
     projectName: t.projectId ? l.projects.find((p) => p.id === t.projectId)?.name : undefined,
+    tags: t.tags?.map((id) => l.tags.find((x) => x.id === id)?.name ?? id),
   };
 }
 
@@ -249,6 +265,7 @@ export function registerTools(server: McpServer, userId: string): void {
             ...(f.options ? { options: f.options } : {}),
           })),
           features: b.features,
+          ...(b.tags ? { tags: { label: b.tags.label, multiSelect: true } } : {}),
         }))
       )
     )
@@ -271,6 +288,10 @@ export function registerTools(server: McpServer, userId: string): void {
           .optional()
           .describe('Only tickets assigned to this member (email or userId). Use "me" for yourself, "none" for unassigned.'),
         project: z.string().optional().describe("Only tickets in this project (name or id). General board only."),
+        tags: z
+          .array(z.string())
+          .optional()
+          .describe("Only tickets with ANY of these tags (names or ids). Boards with tags only, e.g. los."),
         query: z.string().optional().describe("Case-insensitive text match on title and description."),
         limit: z.number().int().min(1).max(200).optional().describe("Max tickets to return. Default 50."),
       },
@@ -278,7 +299,7 @@ export function registerTools(server: McpServer, userId: string): void {
     },
     handler(userId, "list_tickets", async (args, me) => {
       const board = boardOrThrow(args.board);
-      const [tickets, l] = await Promise.all([listTickets(me.orgId, board.id), lookups(me.orgId)]);
+      const [tickets, l] = await Promise.all([listTickets(me.orgId, board.id), lookups(me.orgId, board)]);
 
       let filtered = tickets;
       if (args.status) {
@@ -301,6 +322,15 @@ export function registerTools(server: McpServer, userId: string): void {
         const project = l.projects.find((x) => x.id === args.project || x.name.toLowerCase() === p);
         if (!project) throw new ToolError(`Project "${args.project}" not found. Call list_projects.`);
         filtered = filtered.filter((t) => t.projectId === project.id);
+      }
+      if (args.tags?.length) {
+        tagBoardOrThrow(board.slug);
+        const ids = args.tags.map((name) => {
+          const tag = l.tags.find((t) => t.id === tagIdFor(name));
+          if (!tag) throw new ToolError(`Unknown tag "${name}". Call list_tags.`);
+          return tag.id;
+        });
+        filtered = filtered.filter((t) => (t.tags ?? []).some((id) => ids.includes(id)));
       }
       if (args.query) {
         const q = args.query.toLowerCase();
@@ -335,7 +365,7 @@ export function registerTools(server: McpServer, userId: string): void {
     },
     handler(userId, "get_ticket", async (args, me) => {
       const { board, ticket } = await resolveTicket(me.orgId, args.ticket, args.board);
-      const [detail, l] = await Promise.all([getTicketDetail(me.orgId, board, ticket.id), lookups(me.orgId)]);
+      const [detail, l] = await Promise.all([getTicketDetail(me.orgId, board, ticket.id), lookups(me.orgId, board)]);
       return ok({
         ...present(board, ticket, l),
         messages: detail?.messages ?? [],
@@ -358,6 +388,10 @@ export function registerTools(server: McpServer, userId: string): void {
         assignee: z.string().optional().describe('Assignee email or userId, or "me".'),
         project: z.string().optional().describe("Project name (general board only)."),
         provider: z.string().optional().describe("Provider name (api board only, required there)."),
+        tags: z
+          .array(z.string())
+          .optional()
+          .describe("Tag names or ids (boards with tags only, e.g. LOS names on the los board). Must exist; see list_tags."),
       },
       annotations: WRITE,
     },
@@ -382,9 +416,14 @@ export function registerTools(server: McpServer, userId: string): void {
         throw new ToolError(`The ${board.slug} board has no provider field.`);
       }
 
+      if (args.tags !== undefined) {
+        tagBoardOrThrow(board.slug);
+        input.tags = args.tags;
+      }
+
       const result = await createTicket(me.orgId, board, input, me.userId);
       if ("error" in result) throw new ToolError(result.error);
-      return ok(present(board, result, await lookups(me.orgId)));
+      return ok(present(board, result, await lookups(me.orgId, board)));
     })
   );
 
@@ -400,6 +439,10 @@ export function registerTools(server: McpServer, userId: string): void {
         title: z.string().optional().describe("New title (cannot be empty)."),
         description: z.string().optional().describe('New description; "" clears it.'),
         priority: z.enum([...PRIORITIES, ""]).optional().describe('New priority; "" clears it.'),
+        tags: z
+          .array(z.string())
+          .optional()
+          .describe("Replaces the ticket's tags (names or ids); [] removes all. Boards with tags only."),
       },
       annotations: { ...WRITE, idempotentHint: true },
     },
@@ -410,6 +453,7 @@ export function registerTools(server: McpServer, userId: string): void {
         title: args.title,
         description: args.description,
         priority: args.priority,
+        tags: args.tags,
       });
       if (result === null) throw new ToolError(`Ticket ${args.ticket} not found.`);
       if ("error" in result) throw new ToolError(result.error);
@@ -417,7 +461,7 @@ export function registerTools(server: McpServer, userId: string): void {
       // Re-read rather than merging the old ticket over the result: a merge would
       // bring back a description or priority that was just cleared.
       const fresh = await getTicket(me.orgId, board.id, ticket.id);
-      return ok(present(board, fresh ?? result, await lookups(me.orgId)));
+      return ok(present(board, fresh ?? result, await lookups(me.orgId, board)));
     })
   );
 
@@ -498,6 +542,46 @@ export function registerTools(server: McpServer, userId: string): void {
       if (result === null) throw new ToolError(`Ticket ${args.ticket} not found.`);
       if ("error" in result) throw new ToolError(result.error);
       return ok({ ticket: ticketLabel(board, ticket), payload: toClientPayload(result.payload), payloadCount: result.count });
+    })
+  );
+
+  // -- tags --
+
+  server.registerTool(
+    "list_tags",
+    {
+      title: "List tags",
+      description:
+        "Lists a board's tags (id, name). Only boards with tags have them, e.g. the los board, whose tags say which LOS a ticket affects. The defaults are created on first use.",
+      inputSchema: {
+        board: z.enum(BOARD_SLUGS).optional().describe("Board slug. Defaults to the first board with tags (los)."),
+      },
+      annotations: READ,
+    },
+    handler(userId, "list_tags", async (args, me) => {
+      const board = tagBoardOrThrow(args.board ?? BOARDS.find((b) => b.tags)!.slug);
+      const tags = await listTags(me.orgId, board);
+      return ok({ board: board.slug, label: board.tags!.label, tags: tags.map((t) => ({ id: t.id, name: t.name })) });
+    })
+  );
+
+  server.registerTool(
+    "create_tag",
+    {
+      title: "Create tag",
+      description:
+        "Adds a tag to a board's tag list (e.g. a new LOS on the los board). Names are unique per board, case-insensitive; adding an existing name returns the existing tag. Max 30 characters.",
+      inputSchema: {
+        name: z.string().min(1).describe("Tag name, e.g. Richpay."),
+        board: z.enum(BOARD_SLUGS).optional().describe("Board slug. Defaults to the first board with tags (los)."),
+      },
+      annotations: { ...WRITE, idempotentHint: true },
+    },
+    handler(userId, "create_tag", async (args, me) => {
+      const board = tagBoardOrThrow(args.board ?? BOARDS.find((b) => b.tags)!.slug);
+      const result = await createTag(me.orgId, board, args.name, me.userId);
+      if ("error" in result) throw new ToolError(result.error);
+      return ok({ board: board.slug, created: result.created, tag: { id: result.tag.id, name: result.tag.name } });
     })
   );
 

@@ -18,6 +18,7 @@ export type Ticket = {
   priority?: string;
   projectId?: string; // reference to a project (general board)
   assigneeId?: string; // reference to an org member (universal)
+  tags?: string[]; // tag ids from the board's tag catalog (boards with `tags` only)
   // Derived, not stored in the ticket JSON: the store merges these in from the
   // per-board meta hash when tickets are listed / created.
   number?: number; // per-board sequence, shown as e.g. SUP-42
@@ -55,6 +56,15 @@ export function toClientPayload(payload: TicketPayload): TicketPayload {
   delete copy.createdBy;
   return copy;
 }
+
+// One entry in a board's tag catalog. `id` is the lowercased, dashed name
+// ("Rich Pay" -> "rich-pay"), so the same name can't be added twice.
+export type Tag = {
+  id: string;
+  name: string;
+  createdAt: number;
+  createdBy?: string; // userId; absent for the board's seeded defaults
+};
 
 export type FieldSpec = {
   key: TicketFieldKey;

@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import { PRIORITIES, ticketLabel, type Board as BoardDef } from "@/lib/boards";
 import type { Ticket, TicketMessage, TicketPayload } from "@/lib/tickets";
+import type { TicketEdits } from "@/app/board/[slug]/Board";
+import { TagPicker, type TagOption } from "@/app/board/[slug]/Tags";
 
 type Tab = "conversation" | "payload";
 type Counts = { messageCount?: number; payloadCount?: number };
-type Edits = { title: string; description: string; priority: string };
+type Edits = TicketEdits;
 
 const fieldCls =
   "w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-1.5 text-sm outline-none focus:border-black dark:focus:border-white";
@@ -61,6 +63,8 @@ export default function TicketPanel({
   ticket,
   membersMap,
   projectsMap,
+  tagCatalog,
+  onCreateTag,
   currentUserId,
   busy,
   onClose,
@@ -73,6 +77,8 @@ export default function TicketPanel({
   ticket: Ticket;
   membersMap: Map<string, string>;
   projectsMap: Map<string, string>;
+  tagCatalog: TagOption[];
+  onCreateTag: (name: string) => Promise<TagOption | string>;
   currentUserId: string;
   busy: boolean;
   onClose: () => void;
@@ -87,13 +93,15 @@ export default function TicketPanel({
   const [title, setTitle] = useState(ticket.title);
   const [description, setDescription] = useState(ticket.description ?? "");
   const [priority, setPriority] = useState(ticket.priority ?? "");
+  const [tags, setTags] = useState<string[]>(ticket.tags ?? []);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const dirty =
     title !== ticket.title ||
     description !== (ticket.description ?? "") ||
-    priority !== (ticket.priority ?? "");
+    priority !== (ticket.priority ?? "") ||
+    !sameTags(tags, ticket.tags ?? []);
 
   const tabs: { id: Tab; label: string; count: number }[] = [];
   if (board.features.conversation) {
@@ -153,6 +161,7 @@ export default function TicketPanel({
       title: title.trim(),
       description: description.trim(),
       priority,
+      ...(board.tags ? { tags } : {}),
     });
     if (error) {
       setSaveError(error);
@@ -254,6 +263,18 @@ export default function TicketPanel({
               </select>
             </Labeled>
           </div>
+          {board.tags && (
+            <TagPicker
+              label={board.tags.label}
+              tags={tagCatalog}
+              value={tags}
+              onChange={(next) => {
+                setTags(next);
+                setSaveState("idle");
+              }}
+              onCreate={onCreateTag}
+            />
+          )}
           <Labeled label="Description">
             <textarea
               value={description}
@@ -323,6 +344,11 @@ export default function TicketPanel({
       </aside>
     </div>
   );
+}
+
+// Order doesn't matter for tags (the server stores them in catalog order).
+function sameTags(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((id) => b.includes(id));
 }
 
 function Labeled({ label, children }: { label: string; children: React.ReactNode }) {

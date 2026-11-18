@@ -12,6 +12,7 @@ import {
 } from "@/lib/kv-keys";
 import { effectiveFields, isColumn, PRIORITIES, type Board } from "@/lib/boards";
 import { findOrCreateProjectByName } from "@/lib/projects-store";
+import { resolveTagIds } from "@/lib/tags-store";
 import type { Ticket, TicketMessage, TicketPayload } from "@/lib/tickets";
 
 // Scoped to an organization AND a board: every function takes the caller's orgId
@@ -137,6 +138,13 @@ export async function createTicket(
     }
   }
 
+  // Tags (multi-select) on boards that have a tag catalog. Absent when empty.
+  if (board.tags && input.tags !== undefined && input.tags !== null) {
+    const tags = await resolveTagIds(orgId, board, input.tags);
+    if ("error" in tags) return { error: tags.error };
+    if (tags.length) extra.tags = tags;
+  }
+
   const now = Date.now();
   const ticket: Ticket = {
     ...extra,
@@ -166,6 +174,7 @@ export type TicketEdits = {
   title?: string;
   description?: string;
   priority?: string;
+  tags?: unknown; // replaces the whole list; [] clears it
 };
 
 export async function updateTicket(
@@ -209,7 +218,16 @@ export async function updateTicket(
     }
   }
 
-  if (!clearDescription && !clearPriority && Object.keys(patch).length === 0) {
+  // Tags replace the whole list; an empty list removes the key.
+  let clearTags = false;
+  if (edits.tags !== undefined) {
+    const tags = await resolveTagIds(orgId, board, edits.tags);
+    if ("error" in tags) return { error: tags.error };
+    if (tags.length) patch.tags = tags;
+    else clearTags = true;
+  }
+
+  if (!clearDescription && !clearPriority && !clearTags && Object.keys(patch).length === 0) {
     return { error: "Nothing to update." };
   }
 
@@ -219,6 +237,7 @@ export async function updateTicket(
   const updated: Ticket = { ...existing, ...patch, updatedAt: Date.now() };
   if (clearDescription) delete updated.description;
   if (clearPriority) delete updated.priority;
+  if (clearTags) delete updated.tags;
 
   await kv.set(boardTicketKey(orgId, board.id, id), updated);
   return updated;
