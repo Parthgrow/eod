@@ -20,11 +20,17 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Boards
+
+Boards are defined in code in `lib/boards.ts`: **API integrations** (`/board/api`), **Support** (`/board/support`), **General** (`/board/general`) and **LOS & CRM** (`/board/los`).
+
+**LOS & CRM** tracks work on the LOS instances that share one codebase. Each card can be tagged with one or more LOS (multi-select). The defaults are `Richpay`, `Richman` and `Kuberloan`; add more with **+ New** in any tag picker. Filter the board by one or more LOS with the chips above the columns. To give another board tags, add a `tags: { label, defaults }` entry to its definition.
+
 ## MCP server (connect Claude)
 
 The app ships an [MCP](https://modelcontextprotocol.io) server so Claude (Claude Code, claude.ai, and the desktop and mobile apps) can read and change your workspace's data with tools:
 
-`whoami`, `get_stats`, `list_boards`, `list_tickets`, `get_ticket`, `create_ticket`, `update_ticket`, `delete_ticket`, `add_ticket_message`, `add_ticket_payload`, `list_projects`, `create_project`, `list_members`, `get_eod`, `list_eod_entries`, `save_eod`.
+`whoami`, `get_stats`, `list_boards`, `list_tickets`, `get_ticket`, `create_ticket`, `update_ticket`, `delete_ticket`, `add_ticket_message`, `add_ticket_payload`, `list_tags`, `create_tag`, `list_projects`, `create_project`, `list_members`, `get_eod`, `list_eod_entries`, `save_eod`.
 
 The tools live in `lib/mcp/tools.ts` and go through the same stores as the web routes, so the same validation and rules apply (for example, past EOD days are write-once). Everything is scoped to the token owner's workspace; the workspace is read from the user record, never from tool input.
 

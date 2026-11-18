@@ -16,6 +16,10 @@ export type Board = {
   prefix: string; // human ticket id prefix, e.g. "SUP" -> SUP-42
   // Which extra sections the ticket side panel offers on this board.
   features: { conversation: boolean; payloads: boolean };
+  // Multi-select tags (e.g. which LOS a card is about). The catalog is stored per
+  // org + board in KV and seeded with `defaults` the first time it's read; users
+  // can add more from the board.
+  tags?: { label: string; defaults: readonly string[] };
 };
 
 export const BOARDS: readonly Board[] = [
@@ -65,6 +69,24 @@ export const BOARDS: readonly Board[] = [
     fields: [{ key: "projectId", label: "Project", type: "project" }],
     prefix: "GEN",
     features: { conversation: false, payloads: false },
+  },
+  {
+    id: "los",
+    slug: "los",
+    title: "LOS & CRM",
+    // Several LOS instances run on one codebase, so a card is tagged with the
+    // LOS(es) it affects instead of living on a board per LOS.
+    columns: [
+      { id: "todo", label: "To do" },
+      { id: "in_progress", label: "In progress" },
+      { id: "testing", label: "Testing" },
+      { id: "done", label: "Done" },
+    ],
+    initialStatus: "todo",
+    fields: [],
+    prefix: "LOS",
+    features: { conversation: false, payloads: false },
+    tags: { label: "LOS", defaults: ["Richpay", "Richman", "Kuberloan"] },
   },
 ];
 

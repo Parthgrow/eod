@@ -4,9 +4,12 @@ import { useMemo, useState } from "react";
 import { effectiveFields, PRIORITIES, ticketLabel, type Board as BoardDef } from "@/lib/boards";
 import type { Ticket, TicketFieldKey } from "@/lib/tickets";
 import TicketPanel from "@/app/board/[slug]/TicketPanel";
+import { TagChip, TagPicker, type TagOption } from "@/app/board/[slug]/Tags";
 
 type Member = { userId: string; email: string };
 type ProjectOption = { id: string; name: string };
+// Title / description / priority edits, plus tags on boards that have them.
+export type TicketEdits = { title: string; description: string; priority: string; tags?: string[] };
 
 const inputCls =
   "rounded-full border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-2 text-sm outline-none focus:border-black dark:focus:border-white";
@@ -36,6 +39,7 @@ export default function Board({
   initial,
   members,
   projects,
+  tags,
   currentUserId,
   initialOpenNumber,
 }: {
@@ -43,6 +47,7 @@ export default function Board({
   initial: Ticket[];
   members: Member[];
   projects: ProjectOption[];
+  tags: TagOption[]; // the board's tag catalog; empty on boards without tags
   currentUserId: string;
   initialOpenNumber?: number; // from ?ticket=SUP-42, opens that ticket's panel
 }) {
@@ -74,8 +79,27 @@ export default function Board({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+  const [newTags, setNewTags] = useState<string[]>([]);
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+
+  // The tag catalog grows when someone adds a tag from a picker.
+  const [tagCatalog, setTagCatalog] = useState(tags);
+  const tagsMap = useMemo(() => new Map(tagCatalog.map((t) => [t.id, t])), [tagCatalog]);
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
+
+  async function createTag(name: string): Promise<TagOption | string> {
+    const res = await fetch(`/api/board/${board.slug}/tags`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { tag?: TagOption; error?: string };
+    if (!res.ok || !body.tag) return body.error ?? "Couldn't add the tag, try again.";
+    const tag = { id: body.tag.id, name: body.tag.name };
+    setTagCatalog((prev) => (prev.some((t) => t.id === tag.id) ? prev : [...prev, tag]));
+    return tag;
+  }
 
   const projectsMap = useMemo(() => new Map(projects.map((p) => [p.id, p.name])), [projects]);
   const membersMap = useMemo(() => new Map(members.map((m) => [m.userId, m.email])), [members]);
@@ -96,8 +120,13 @@ export default function Board({
 
   const filterOptions = filterField ? valuesOf(filterField.key) : [];
   const activeFilter = filterValue && filterOptions.includes(filterValue) ? filterValue : null;
-  const visible =
-    activeFilter && filterField ? items.filter((t) => t[filterField.key] === activeFilter) : items;
+  // Tag filter is multi-select: a card shows if it has any of the chosen tags.
+  const activeTagFilter = tagFilter.filter((id) => tagsMap.has(id));
+  const visible = items.filter(
+    (t) =>
+      (!activeFilter || !filterField || t[filterField.key] === activeFilter) &&
+      (activeTagFilter.length === 0 || (t.tags ?? []).some((id) => activeTagFilter.includes(id)))
+  );
 
   function setBusyId(id: string, on: boolean) {
     setBusy((prev) => {
@@ -127,7 +156,12 @@ export default function Board({
     const res = await fetch(`/api/board/${board.slug}/tickets`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: title.trim(), description: description.trim(), ...fieldValues }),
+      body: JSON.stringify({
+        title: title.trim(),
+        description: description.trim(),
+        ...fieldValues,
+        ...(board.tags ? { tags: newTags } : {}),
+      }),
     });
     if (res.ok) {
       const { ticket } = (await res.json()) as { ticket: Ticket };
@@ -135,6 +169,7 @@ export default function Board({
       setTitle("");
       setDescription("");
       setFieldValues({});
+      setNewTags([]);
     } else {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       setAddError(body.error ?? "Couldn't add, try again.");
@@ -164,10 +199,7 @@ export default function Board({
 
   // Title / description edit. Returns an error message, or null on success, so
   // the card can keep its editor open and show what went wrong.
-  async function saveEdits(
-    ticket: Ticket,
-    edits: { title: string; description: string; priority: string }
-  ): Promise<string | null> {
+  async function saveEdits(ticket: Ticket, edits: TicketEdits): Promise<string | null> {
     setBusyId(ticket.id, true);
     const res = await fetch(`/api/board/${board.slug}/tickets/${ticket.id}`, {
       method: "PATCH",
@@ -270,6 +302,15 @@ export default function Board({
           </button>
           {addError && <span className="text-sm text-red-600 dark:text-red-400">{addError}</span>}
         </div>
+        {board.tags && (
+          <TagPicker
+            label={board.tags.label}
+            tags={tagCatalog}
+            value={newTags}
+            onChange={setNewTags}
+            onCreate={createTag}
+          />
+        )}
         {/* The description only appears once there's something to describe. */}
         {title.trim() && (
           <textarea
@@ -295,6 +336,27 @@ export default function Board({
         </div>
       )}
 
+      {board.tags && tagCatalog.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label={`Filter by ${board.tags.label}`}>
+          <span className="text-xs text-zinc-500">Filter by {board.tags.label}</span>
+          <Chip active={activeTagFilter.length === 0} onClick={() => setTagFilter([])}>
+            All
+          </Chip>
+          {tagCatalog.map((t) => {
+            const on = activeTagFilter.includes(t.id);
+            return (
+              <Chip
+                key={t.id}
+                active={on}
+                onClick={() => setTagFilter(on ? activeTagFilter.filter((id) => id !== t.id) : [...activeTagFilter, t.id])}
+              >
+                {t.name}
+              </Chip>
+            );
+          })}
+        </div>
+      )}
+
       <div className="flex gap-4 overflow-x-auto pb-4">
         {board.columns.map((col, colIdx) => {
           const cards = visible.filter((t) => t.status === col.id);
@@ -312,6 +374,9 @@ export default function Board({
                     board={board}
                     projectsMap={projectsMap}
                     membersMap={membersMap}
+                    tagCatalog={tagCatalog}
+                    tagsMap={tagsMap}
+                    onCreateTag={createTag}
                     busy={busy.has(ticket.id)}
                     canLeft={colIdx > 0}
                     canRight={colIdx < board.columns.length - 1}
@@ -334,6 +399,8 @@ export default function Board({
           ticket={openTicket}
           membersMap={membersMap}
           projectsMap={projectsMap}
+          tagCatalog={tagCatalog}
+          onCreateTag={createTag}
           currentUserId={currentUserId}
           busy={busy.has(openTicket.id)}
           onClose={closePanel}
@@ -377,6 +444,9 @@ function Card({
   board,
   projectsMap,
   membersMap,
+  tagCatalog,
+  tagsMap,
+  onCreateTag,
   busy,
   canLeft,
   canRight,
@@ -389,15 +459,15 @@ function Card({
   board: BoardDef;
   projectsMap: Map<string, string>;
   membersMap: Map<string, string>;
+  tagCatalog: TagOption[];
+  tagsMap: Map<string, TagOption>;
+  onCreateTag: (name: string) => Promise<TagOption | string>;
   busy: boolean;
   canLeft: boolean;
   canRight: boolean;
   onMove: (ticket: Ticket, dir: -1 | 1) => void;
   onRemove: (ticket: Ticket) => void;
-  onSave: (
-    ticket: Ticket,
-    edits: { title: string; description: string; priority: string }
-  ) => Promise<string | null>;
+  onSave: (ticket: Ticket, edits: TicketEdits) => Promise<string | null>;
   onOpen: (ticket: Ticket) => void;
 }) {
   const assigneeEmail = ticket.assigneeId ? membersMap.get(ticket.assigneeId) : undefined;
@@ -408,6 +478,7 @@ function Card({
   const [draftTitle, setDraftTitle] = useState(ticket.title);
   const [draftDescription, setDraftDescription] = useState(description);
   const [draftPriority, setDraftPriority] = useState(ticket.priority ?? "");
+  const [draftTags, setDraftTags] = useState<string[]>(ticket.tags ?? []);
   const [editError, setEditError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
 
@@ -418,6 +489,7 @@ function Card({
     setDraftTitle(ticket.title);
     setDraftDescription(description);
     setDraftPriority(ticket.priority ?? "");
+    setDraftTags(ticket.tags ?? []);
     setEditError(null);
     setEditing(true);
   }
@@ -438,6 +510,7 @@ function Card({
       title: draftTitle.trim(),
       description: draftDescription.trim(),
       priority: draftPriority,
+      ...(board.tags ? { tags: draftTags } : {}),
     });
     if (error) setEditError(error);
     else cancelEditing();
@@ -473,6 +546,15 @@ function Card({
             <option value={draftPriority}>{draftPriority}</option>
           )}
         </select>
+        {board.tags && (
+          <TagPicker
+            label={board.tags.label}
+            tags={tagCatalog}
+            value={draftTags}
+            onChange={setDraftTags}
+            onCreate={onCreateTag}
+          />
+        )}
         <textarea
           value={draftDescription}
           onChange={(e) => setDraftDescription(e.target.value)}
@@ -520,6 +602,14 @@ function Card({
               </p>
             ) : null;
           })}
+          {ticket.tags && ticket.tags.length > 0 && (
+            <div className="mb-1 flex flex-wrap gap-1">
+              {ticket.tags.map((id) => {
+                const tag = tagsMap.get(id);
+                return tag ? <TagChip key={id} tag={tag} /> : null;
+              })}
+            </div>
+          )}
           <p className="text-sm text-black dark:text-zinc-50 break-words">{ticket.title}</p>
           {description && (
             <>

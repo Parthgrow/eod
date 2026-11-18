@@ -6,6 +6,7 @@ import { listTickets } from "@/lib/tickets-store";
 import { toClientTicket } from "@/lib/tickets";
 import { listMembers } from "@/lib/org-store";
 import { listProjects } from "@/lib/projects-store";
+import { listTags } from "@/lib/tags-store";
 import Board from "@/app/board/[slug]/Board";
 import BoardTabs from "@/app/board/BoardTabs";
 
@@ -27,10 +28,11 @@ export default async function BoardPage({
   const board = getBoardBySlug(slug);
   if (!board) notFound();
 
-  const [tickets, members, projects] = await Promise.all([
+  const [tickets, members, projects, tags] = await Promise.all([
     listTickets(session.orgId, board.id),
     listMembers(session.orgId), // for the assignee picker + card resolution
     listProjects(session.orgId), // for the project picker + card resolution
+    listTags(session.orgId, board), // tag catalog; [] on boards without tags
   ]);
 
   return (
@@ -47,6 +49,7 @@ export default async function BoardPage({
           initial={tickets.map(toClientTicket)}
           members={members}
           projects={projects.map((p) => ({ id: p.id, name: p.name }))}
+          tags={tags.map((t) => ({ id: t.id, name: t.name }))}
           currentUserId={session.userId}
           initialOpenNumber={initialOpenNumber}
         />
