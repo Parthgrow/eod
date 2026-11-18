@@ -79,3 +79,13 @@ export async function listMembers(orgId: string): Promise<OrgMember[]> {
   );
   return members.filter((m) => m.email).sort((a, b) => a.email.localeCompare(b.email));
 }
+
+export type UserContext = { userId: string; email: string; orgId: string };
+
+// Identity for callers that don't have a session cookie (the MCP server). The
+// orgId is read from the user record — never from request input.
+export async function getUserContext(userId: string): Promise<UserContext | null> {
+  const user = await kv.hgetall<{ id?: string; email?: string; orgId?: string }>(userKey(userId));
+  if (!user?.email || !user.orgId) return null;
+  return { userId, email: user.email, orgId: user.orgId };
+}

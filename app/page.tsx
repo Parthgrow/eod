@@ -27,6 +27,9 @@ export default async function Home() {
             {org && (
               <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{org.name}</span>
             )}
+            <Link href="/settings" className="text-sm text-zinc-500 hover:text-black dark:hover:text-white">
+              Connect Claude
+            </Link>
             <form action={logout}>
               <button
                 type="submit"

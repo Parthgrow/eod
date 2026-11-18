@@ -20,6 +20,54 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## MCP server (connect Claude)
+
+The app ships an [MCP](https://modelcontextprotocol.io) server so Claude (Claude Code, claude.ai, and the desktop and mobile apps) can read and change your workspace's data with tools:
+
+`whoami`, `get_stats`, `list_boards`, `list_tickets`, `get_ticket`, `create_ticket`, `update_ticket`, `delete_ticket`, `add_ticket_message`, `add_ticket_payload`, `list_projects`, `create_project`, `list_members`, `get_eod`, `list_eod_entries`, `save_eod`.
+
+The tools live in `lib/mcp/tools.ts` and go through the same stores as the web routes, so the same validation and rules apply (for example, past EOD days are write-once). Everything is scoped to the token owner's workspace; the workspace is read from the user record, never from tool input.
+
+### Remote server (Claude Code)
+
+1. Sign in, click **Connect Claude** (`/settings`) and generate a token. It is shown once.
+2. Run the command shown on that page:
+
+```bash
+claude mcp add --transport http eod https://<your-host>/api/mcp --header "Authorization: Bearer <token>"
+```
+
+`POST /api/mcp` is a stateless Streamable HTTP endpoint (JSON responses, no sessions). `GET` and `DELETE` return 405.
+
+### claude.ai, desktop and mobile apps
+
+In Claude, open **Settings → Connectors → Add custom connector**, paste the URL from `/settings` and leave authentication empty:
+
+```
+https://<your-host>/api/mcp/<token>
+```
+
+Connectors added on claude.ai are also available in the desktop and mobile apps.
+
+### Local server (stdio)
+
+`.mcp.json` registers a local stdio server for Claude Code in this repo. It talks to KV directly, as the user in `EOD_USER_ID` (shown on `/settings`). Put these in `.env`:
+
+```
+KV_REST_API_URL=...
+KV_REST_API_TOKEN=...
+EOD_USER_ID=<your user id>
+```
+
+It runs `npx tsx --conditions=react-server --env-file=.env scripts/mcp-server.ts`. The `react-server` condition turns the `server-only` imports in `lib/` into no-ops outside Next.
+
+### Security
+
+- A token acts as you. Only its SHA-256 is stored in KV; the raw value is shown once. Each user can have up to 10 tokens.
+- The `/api/mcp/<token>` URL **is the credential**. Treat it like a password, and don't paste it anywhere shared.
+- Revoke a token on `/settings` and it stops working on both endpoints immediately.
+- The local stdio server uses your KV credentials and can act as any user id you give it. Only run it on your own machine.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

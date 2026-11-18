@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "eod": {
+      "command": "npx",
+      "args": ["tsx", "--conditions=react-server", "--env-file=.env", "scripts/mcp-server.ts"]
+    }
+  }
+}

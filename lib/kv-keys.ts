@@ -80,3 +80,13 @@ export function projectKey(orgId: string, projectId: string): string {
 export function orgEntryIndexKey(orgId: string): string {
   return `org:${orgId}:eod_index`;
 }
+
+// MCP access tokens. Only the SHA-256 of a token is stored; the raw token is
+// shown to the user once and never persisted.
+export function mcpTokenKey(sha256: string): string {
+  return `eod:mcp:token:${sha256}`; // json — { userId, tokenId }
+}
+
+export function userMcpTokensKey(userId: string): string {
+  return `eod:user:${userId}:mcp_tokens`; // Hash — tokenId → { id, name, hint, hash, createdAt }
+}
