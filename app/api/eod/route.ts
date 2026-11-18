@@ -1,7 +1,6 @@
-import { kv } from "@vercel/kv";
 import { requireSession } from "@/lib/dal";
-import { entryKey, entryIndexKey, orgEntryIndexKey } from "@/lib/kv-keys";
-import { todayDateKey, isValidDateKey, type EodEntry } from "@/lib/eod";
+import { readJson } from "@/lib/board-api";
+import { getEntry, saveEntry, todayDateKey, isValidDateKey } from "@/lib/eod";
 
 export async function GET(request: Request) {
   const session = await requireSession();
@@ -12,9 +11,7 @@ export async function GET(request: Request) {
     return Response.json({ error: "Invalid date." }, { status: 400 });
   }
 
-  const date = dateParam ?? todayDateKey();
-  const entry = await kv.get<EodEntry>(entryKey(session.userId, date));
-
+  const entry = await getEntry(session.userId, dateParam ?? todayDateKey());
   return Response.json({ entry });
 }
 
@@ -22,60 +19,17 @@ export async function POST(request: Request) {
   const session = await requireSession();
   if (session instanceof Response) return session;
 
-  const { content, date: dateInput } = (await request.json()) as {
-    content?: string;
-    date?: string;
-  };
+  const body = await readJson(request);
+  if (!body) return Response.json({ error: "Invalid request body." }, { status: 400 });
 
-  const trimmed = (content ?? "").trim();
-  if (!trimmed) {
-    return Response.json({ error: "Content is required." }, { status: 400 });
+  // The save rules (today is editable, past days are write-once, no future
+  // days) live in lib/eod.ts so the MCP tool applies exactly the same ones.
+  const result = await saveEntry(
+    { userId: session.userId, email: session.email, orgId: session.orgId },
+    { content: body.content, date: body.date }
+  );
+  if ("error" in result) {
+    return Response.json({ error: result.error }, { status: result.status });
   }
-
-  const today = todayDateKey();
-
-  // Optional date; defaults to today. Any past day is allowed, never a future one.
-  if (dateInput !== undefined) {
-    if (!isValidDateKey(dateInput)) {
-      return Response.json({ error: "Invalid date." }, { status: 400 });
-    }
-    if (dateInput > today) {
-      return Response.json(
-        { error: "Cannot add an EOD for a future date." },
-        { status: 400 }
-      );
-    }
-  }
-
-  const date = dateInput ?? today;
-  const existing = await kv.get<EodEntry>(entryKey(session.userId, date));
-
-  // Today's entry stays editable (upsert). Past days are write-once.
-  if (date !== today && existing) {
-    return Response.json(
-      { error: "An EOD already exists for that day." },
-      { status: 409 }
-    );
-  }
-
-  const now = Date.now();
-  const entry: EodEntry = {
-    userId: session.userId,
-    authorEmail: session.email,
-    orgId: session.orgId,
-    date,
-    content: trimmed,
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-  };
-
-  const score = Number(date.replaceAll("-", ""));
-  await Promise.all([
-    kv.set(entryKey(session.userId, date), entry),
-    kv.zadd(entryIndexKey(session.userId), { score, member: date }),
-    // Add to the org-wide feed so the whole team sees it.
-    kv.zadd(orgEntryIndexKey(session.orgId), { score, member: `${date}#${session.userId}` }),
-  ]);
-
-  return Response.json({ entry });
+  return Response.json({ entry: result.entry });
 }

@@ -81,6 +81,25 @@ export async function listTickets(orgId: string, boardId: string): Promise<Ticke
   return tickets.map((t) => decorate(t, meta));
 }
 
+// One ticket with its number and counters, or null if it isn't on this board.
+export async function getTicket(orgId: string, boardId: string, id: string): Promise<Ticket | null> {
+  const ticket = await kv.get<Ticket>(boardTicketKey(orgId, boardId, id));
+  if (!ticket) return null;
+
+  const meta = await loadMeta(orgId, boardId);
+  if (!meta[`${id}:n`]) meta[`${id}:n`] = await assignNumber(orgId, boardId, id);
+  return decorate(ticket, meta);
+}
+
+// Resolves a human ticket number (the 42 in SUP-42) to the ticket's id.
+export async function getTicketIdByNumber(
+  orgId: string,
+  boardId: string,
+  number: number
+): Promise<string | null> {
+  const id = await kv.hget<string>(ticketNumbersKey(orgId, boardId), String(number));
+  return id ? String(id) : null;
+}
 
 export async function createTicket(
   orgId: string,

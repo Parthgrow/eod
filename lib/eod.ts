@@ -30,6 +30,70 @@ export function isValidDateKey(date: string): boolean {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date;
 }
 
+// The author of an entry. Always comes from the caller's session / user record,
+// never from request input.
+export type EodAuthor = { userId: string; email: string; orgId: string };
+
+export async function getEntry(userId: string, date: string): Promise<EodEntry | null> {
+  return (await kv.get<EodEntry>(entryKey(userId, date))) ?? null;
+}
+
+export type SaveEntryResult = { entry: EodEntry } | { error: string; status: number };
+
+// The one place EOD save rules live (used by the web route and the MCP tool):
+// - `date` is optional and defaults to today (UTC); future days are rejected.
+// - Today's entry is editable (upsert). Past days are write-once.
+// - `append: true` adds the content under the existing entry instead of replacing it.
+export async function saveEntry(
+  author: EodAuthor,
+  input: { content?: unknown; date?: unknown; append?: boolean },
+  now: Date = new Date()
+): Promise<SaveEntryResult> {
+  const trimmed = typeof input.content === "string" ? input.content.trim() : "";
+  if (!trimmed) return { error: "Content is required.", status: 400 };
+
+  const today = todayDateKey(now);
+
+  if (input.date !== undefined && input.date !== null) {
+    if (typeof input.date !== "string" || !isValidDateKey(input.date)) {
+      return { error: "Invalid date.", status: 400 };
+    }
+    if (input.date > today) {
+      return { error: "Cannot add an EOD for a future date.", status: 400 };
+    }
+  }
+
+  const date = typeof input.date === "string" ? input.date : today;
+  const existing = await getEntry(author.userId, date);
+
+  if (date !== today && existing) {
+    return { error: "An EOD already exists for that day.", status: 409 };
+  }
+
+  const content = input.append && existing ? `${existing.content}\n\n${trimmed}` : trimmed;
+
+  const ts = now.getTime();
+  const entry: EodEntry = {
+    userId: author.userId,
+    authorEmail: author.email,
+    orgId: author.orgId,
+    date,
+    content,
+    createdAt: existing?.createdAt ?? ts,
+    updatedAt: ts,
+  };
+
+  const score = Number(date.replaceAll("-", ""));
+  await Promise.all([
+    kv.set(entryKey(author.userId, date), entry),
+    kv.zadd(entryIndexKey(author.userId), { score, member: date }),
+    // Add to the org-wide feed so the whole team sees it.
+    kv.zadd(orgEntryIndexKey(author.orgId), { score, member: `${date}#${author.userId}` }),
+  ]);
+
+  return { entry };
+}
+
 export const ENTRIES_PAGE_SIZE = 10;
 
 export type EntriesPage = {

@@ -7,7 +7,7 @@ builders themselves live in `lib/kv-keys.ts`.
 > **Sessions are not in KV.** A signed JWT (`eod_session`, an httpOnly cookie)
 > carries `{ userId, email, orgId }`. See `lib/session.ts`.
 
-_Last updated: 2026-09-19_
+_Last updated: 2026-11-18_
 
 ## Conventions
 
@@ -25,6 +25,18 @@ _Last updated: 2026-09-19_
 | `eod:user:by-email:{email}` | string | `userId` | Look up a user id by email (login) |
 | `eod:user:{userId}` | hash | `{ id, email, orgId, createdAt }` | The user record; `orgId` = their active workspace |
 | `eod:account:{providerId}:{userId}` | hash | `{ passwordHash }` | Auth credentials per provider (`credentials` today) |
+
+## MCP tokens
+
+Personal access tokens for the MCP server (`/api/mcp`, see the README). A token
+is `eod_` + 32 random bytes (base64url). **Only its SHA-256 is stored**; the raw
+token is shown to the user once. At most 10 per user. Revoking deletes both rows.
+Key builders: `mcpTokenKey`, `userMcpTokensKey`; logic in `lib/mcp/auth.ts`.
+
+| Key | Type | Value | Purpose |
+|-----|------|-------|---------|
+| `eod:mcp:token:{sha256}` | json | `{ userId, tokenId }` | Look up who a presented token belongs to |
+| `eod:user:{userId}:mcp_tokens` | hash | `tokenId → { id, name, hint, hash, createdAt }` | A user's tokens, for listing and revoking; `hint` = first 8 chars |
 
 ## Organizations & membership
 
